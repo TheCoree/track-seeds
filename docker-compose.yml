@@ -1,0 +1,36 @@
+# Сервер: docker compose up -d --build   (первый раз — deploy/setup.sh)
+# Дробилки вшиты в образ; в ./config — пароли камер и что меняли в интерфейсе (см. README).
+services:
+  track-seeds:
+    build:
+      context: .
+      args:
+        UID: ${HOST_UID:-1000}  # владелец ./config на хосте: id -u (deploy/setup.sh пишет его в .env)
+    image: track-seeds:latest
+    # Поднимается сам: после перезагрузки и пропадания питания (служба docker включена в автозапуск),
+    # после падения процесса; «docker compose stop» до перезагрузки не мешает — на проде он нужен всегда.
+    restart: always
+    # сеть хоста: камеры в локальной сети видны как есть; веб — на WEB_HOST:WEB_PORT сервера,
+    # пускает только из локальной сети (WEB_ALLOWED_NETWORKS) и по паролю (WEB_PASSWORD)
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ./config:/app/config  # пароли камер, оповещения, свои эталоны — то, что переносится с ПК
+      - data:/app/data        # журнал событий, снимки, кеш голоса
+    # Сервер 2 ядра / 4 ГБ: обычно ~0.1 ядра и ~400 МБ; потолок — чтобы сбой не съел всю память
+    mem_limit: 1500m
+    # Физический динамик, подключённый к серверу (aplay). Номер группы audio на хосте:
+    # getent group audio | cut -d: -f3
+    # devices:
+    #   - /dev/snd:/dev/snd
+    # group_add:
+    #   - "${AUDIO_GID:-29}"
+    stop_grace_period: 60s  # дослать уведомления и договорить фразу
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:

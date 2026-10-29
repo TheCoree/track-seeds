@@ -1,0 +1,36 @@
+[project]
+name = "track-seeds"
+version = "0.1.0"
+description = "Мониторинг по IP-камерам (OpenCV): семена в дробилке, люди, номера машин; веб-интерфейс, ntfy, голос"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fast-plate-ocr>=1.1",
+    "fastapi>=0.120",
+    "numpy>=2.3",
+    "onnxruntime>=1.23",
+    "open-image-models>=0.6",
+    "opencv-python-headless>=5.0",
+    "piper-tts>=1.3",
+    "pydantic-settings>=2.11",
+    "uvicorn>=0.38",
+]
+
+[project.optional-dependencies]
+dev = ["httpx>=0.28", "pytest>=9"]
+
+[project.scripts]
+track-seeds = "track_seeds.cli:main"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+track_seeds = ["builtin/*/samples/*.jpg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

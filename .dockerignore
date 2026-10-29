@@ -1,0 +1,13 @@
+.venv
+.env
+.git
+data
+models
+tests
+**/__pycache__
+**/*.egg-info
+.pytest_cache
+web/node_modules
+web/.next
+web/out
+config/
