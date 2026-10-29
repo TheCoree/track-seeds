@@ -28,6 +28,7 @@ import { duration } from "@/lib/format";
 import type { EventRow, Meta, Overview } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { crusherState } from "./crusher-status";
+import { ThemeToggle } from "./theme";
 
 interface AppData {
   overview: Overview | null;
@@ -243,6 +244,7 @@ function TopBar() {
           </span>
         )}
       </div>
+      <ThemeToggle className={cn(worst && "text-white hover:bg-white/15 hover:text-white")} />
       <Tooltip>
         <TooltipTrigger
           render={

@@ -94,12 +94,21 @@ export function ZoneView({ crusher, tick, className }: { crusher: Crusher; tick:
       </svg>
       {zones.map((zone) => {
         const status = statuses.find((s) => s.id === zone.id);
-        const top = zone.points.reduce((a, b) => (b[1] < a[1] ? b : a));
+        // подпись желоба — над зоной, привода — под ней: зоны рядом, подписи не налезают на соседнюю
+        const below = zone.kind === "motion";
+        const anchor = zone.points.reduce((a, b) => ((below ? b[1] > a[1] : b[1] < a[1]) ? b : a));
         return (
           <div
             key={zone.id}
-            className="pointer-events-none absolute -translate-y-full whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-white shadow sm:text-xs"
-            style={{ left: `${top[0] * 100}%`, top: `calc(${top[1] * 100}% - 4px)`, background: zoneColor(zone, status) }}
+            className={cn(
+              "pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-white shadow sm:text-xs",
+              !below && "-translate-y-full",
+            )}
+            style={{
+              left: `${anchor[0] * 100}%`,
+              top: below ? `calc(${anchor[1] * 100}% + 4px)` : `calc(${anchor[1] * 100}% - 4px)`,
+              background: zoneColor(zone, status),
+            }}
           >
             {zone.name}
             {zoneValue(zone, status) && <span className="ml-1 tabular-nums opacity-90">· {zoneValue(zone, status)}</span>}
