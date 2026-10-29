@@ -297,8 +297,9 @@ def test_stopped_crusher_does_not_alarm_and_restart_without_seeds_does(tmp_path)
     assert a.running is True
 
     stop = run_drive(a, 15, 30, 0.95, False)
-    assert [(e.level, e.quiet) for e in stop] == [("stopped", True)]
-    assert a.running is False and "остановлена" in format_event(stop[0]).title
+    assert [(e.level, e.quiet) for e in stop] == [("stopped", False)]
+    assert a.running is False and "остановилась" in format_event(stop[0]).title
+    assert format_event(stop[0]).priority == "high" and "семена есть" in format_event(stop[0]).message
 
     # стоит, а бункер опустел (или лопасть замерла перед зоной) — молчим, напоминаний тоже нет
     assert run_drive(a, 45, 200, 0.0, False) == []
@@ -309,15 +310,27 @@ def test_stopped_crusher_does_not_alarm_and_restart_without_seeds_does(tmp_path)
     assert start[0].ts - (1_000_000 + 245) >= 30
 
 
-def test_restart_with_seeds_is_quiet_and_reminders_stop_when_stopped(tmp_path):
+def test_restart_with_seeds_notifies_and_reminders_stop_when_stopped(tmp_path):
     a = make_drive_analyzer(tmp_path, remind_every_s=60)
     run_drive(a, 0, 15, 0.95, True)
     assert [e.level for e in run_drive(a, 15, 40, 0.0, True)] == ["empty"]  # кончились в работе — тревога
     stop = run_drive(a, 55, 200, 0.0, False)  # остановили: «стоит», и больше не напоминаем
     assert [e.level for e in stop] == ["stopped"]
     back = run_drive(a, 255, 30, 0.95, True)  # досыпали и запустили
-    assert [(e.level, e.previous, e.quiet) for e in back] == [("ok", "stopped", True)]
-    assert "работает" in format_event(back[0]).title
+    assert [(e.level, e.previous, e.quiet) for e in back] == [("ok", "stopped", False)]
+    assert "снова работает" in format_event(back[0]).title
+
+
+def test_stop_and_start_are_quiet_when_disabled(tmp_path):
+    a = make_drive_analyzer(tmp_path, notify_stopped=False)
+    run_drive(a, 0, 15, 0.95, True)
+    assert [(e.level, e.quiet) for e in run_drive(a, 15, 40, 0.95, False)] == [("stopped", True)]
+    assert [(e.level, e.quiet) for e in run_drive(a, 55, 30, 0.95, True)] == [("ok", True)]
+
+
+def test_crusher_already_stopped_at_server_start_is_quiet(tmp_path):
+    a = make_drive_analyzer(tmp_path)
+    assert [(e.level, e.previous, e.quiet) for e in run_drive(a, 0, 40, 0.95, False)] == [("stopped", None, True)]
 
 
 def test_drive_state_unknown_at_start_holds_decision(tmp_path):

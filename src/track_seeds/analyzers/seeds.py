@@ -324,10 +324,18 @@ class SeedsAnalyzer:
             duration = max(z.debounce.blind_for(ts) for z in zones)
         else:
             duration = ts - since if since is not None else 0.0
-        # Только в журнал: остановка, первое «семена есть» после запуска сервера или дробилки,
+        # Только в журнал: первое состояние после запуска сервера, остановка и запуск при notify_stopped=false,
         # «досыпали» при notify_refill=false
-        quiet = level == "stopped" or level == "ok" and (
-            previous in (None, "stopped") or not self._settings.notify_refill and previous != "unknown")
+        s = self._settings
+        match level:
+            case "stopped":
+                quiet = previous is None or not s.notify_stopped
+            case "ok" if previous == "stopped":
+                quiet = not s.notify_stopped
+            case "ok":
+                quiet = previous is None or not s.notify_refill and previous != "unknown"
+            case _:
+                quiet = False
         log.info("Семена (%s): %s → %s", self._camera, previous or "старт", level)
         return [self._event(frame, level, previous, duration, zones, last_known=last_known, quiet=quiet)]
 

@@ -59,13 +59,15 @@ def _seeds_text(e: SeedsLevelChanged) -> Notification:
                                          f"сдвинулась. Последнее состояние: {last}"),
                                 tags=("eyes",), priority="high", image=e.snapshot)
         case "stopped":
-            return Notification(title=f"{e.camera}: дробилка остановлена",
-                                message=f"{_clock(e.ts)} — привод не движется. Пока стоит, о семенах не сообщается",
-                                tags=("pause_button",), priority="low", image=e.snapshot)
+            before = f" До остановки — {LEVEL_NAMES[e.previous]}." if e.previous in ("ok", "low", "empty") else ""
+            return Notification(title=f"{e.camera}: дробилка остановилась",
+                                message=f"{_clock(e.ts)} — привод не движется.{before} Пока стоит, о семенах "
+                                        f"не сообщается",
+                                tags=("octagonal_sign",), priority="high", image=e.snapshot)
     if e.previous == "stopped":
-        return Notification(title=f"{e.camera}: дробилка работает, семена есть",
+        return Notification(title=f"{e.camera}: дробилка снова работает, семена есть",
                             message=f"{_clock(e.ts)} — стояла {format_duration(e.duration_s)}",
-                            tags=("arrow_forward",), priority="low", image=e.snapshot)
+                            tags=("arrow_forward",), image=e.snapshot)
     if e.previous in ("empty", "low"):
         was = "пусто" if e.previous == "empty" else "мало"
         return Notification(title=f"{e.camera}: семена досыпали",

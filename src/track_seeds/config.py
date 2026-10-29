@@ -208,6 +208,9 @@ class SeedsConfig(BaseModel):
     remind_every_s: float = Field(600, ge=0, title="Напоминать «всё ещё пусто» каждые, с",
                                   description="0 — не напоминать", json_schema_extra=UI)
     notify_refill: bool = Field(True, title="Сообщать, когда досыпали", json_schema_extra=UI)
+    notify_stopped: bool = Field(True, title="Сообщать, когда дробилка остановилась и запустилась",
+                                 description="Нужна зона «привод». Сразу после запуска сервера — только в журнал",
+                                 json_schema_extra=UI)
     stopped_after_s: float = Field(10, gt=0, title="«Дробилка стоит», если привод неподвижен дольше, с",
                                    description="Нужна зона «привод». Пока дробилка стоит, о пустом желобе не "
                                                "сообщается", json_schema_extra=UI)
@@ -228,6 +231,7 @@ class SeedsConfig(BaseModel):
     say_low: str = ""
     say_refill: str = ""
     say_unknown: str = ""
+    say_stopped: str = ""
     say_reminders: bool = True
     say_times: int = Field(2, ge=1, le=5)
     voice_hours: str = ""  # «08:00-20:00»; пусто — всегда

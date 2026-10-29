@@ -296,7 +296,8 @@ class Supervisor:
     def warm_voice(self) -> None:
         """Скачать/загрузить голос и заранее синтезировать фразы тревог — тревога не ждёт синтеза."""
         phrases = {text for p in self.store.crushers.values()
-                   for text in (p.seeds.say_empty, p.seeds.say_low, p.seeds.say_refill, p.seeds.say_unknown) if text}
+                   for text in (p.seeds.say_empty, p.seeds.say_low, p.seeds.say_refill, p.seeds.say_unknown,
+                                p.seeds.say_stopped) if text}
 
         def warm() -> None:
             try:
