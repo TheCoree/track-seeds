@@ -81,6 +81,7 @@ export interface SeedsConfig {
   say_low: string;
   say_refill: string;
   say_unknown: string;
+  say_stopped: string;
   say_reminders: boolean;
   say_times: number;
   voice_hours: string;

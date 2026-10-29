@@ -85,6 +85,8 @@ def test_phrase_for_levels():
     assert phrase_for(seeds_event("low"), rules) == "Мало"
     assert phrase_for(seeds_event("ok", "empty"), rules) == ""
     assert phrase_for(seeds_event("unknown"), rules) == ""
+    assert phrase_for(seeds_event("stopped"), rules) == ""
+    assert phrase_for(seeds_event("stopped"), SeedsConfig(say_stopped="Стоит")) == "Стоит"
 
 
 def test_in_hours_including_overnight():

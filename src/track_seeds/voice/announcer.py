@@ -36,6 +36,8 @@ def phrase_for(event: Event, rules: SeedsConfig) -> str:
             return rules.say_low
         case "unknown":
             return rules.say_unknown
+        case "stopped":
+            return rules.say_stopped
         case "ok" if event.previous in ("empty", "low"):
             return rules.say_refill
     return ""
