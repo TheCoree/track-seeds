@@ -8,6 +8,10 @@
 }
 
 {$DOMAIN} {
+	# запрос больше этого сюда не пройдёт: самое большое законное — эталон до 20 МБ
+	request_body {
+		max_size 25MB
+	}
 	# страницы и данные — сжатыми; видео (multipart) Caddy не сжимает и отдаёт без задержки
 	encode zstd gzip
 	# сайт видит Caddy на 127.0.0.1 (WEB_TRUSTED_PROXIES) и берёт адрес посетителя из X-Forwarded-For

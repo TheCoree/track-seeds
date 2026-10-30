@@ -402,3 +402,15 @@ def test_developer_panel_from_internet_when_allowed(tmp_path, video):  # noqa: F
     assert ServerSettings(_env_file=None, admin_networks="any").admin_networks == ["0.0.0.0/0", "::/0"]
     with pytest.raises(ValueError, match="WEB_ALLOW_NO_PASSWORD"):
         ServerSettings(_env_file=None, admin_networks="any", allow_no_password=True)
+
+
+def test_password_guessing_from_internet_does_not_lock_out_the_office(site):
+    """Перебор пароля admin с сотни адресов интернета закрывает вход на этот логин из интернета, но не из
+    локальной сети: иначе любой мог бы запирать разработчика (с WEB_ADMIN_NETWORKS=any — и снаружи)."""
+    app, _ = site
+    accounts: AccountStore = app.state.accounts
+    for i in range(31):
+        accounts.throttle.fail(f"5.6.7.{i}", "admin")
+    response = browser(app, ("9.9.9.9", 1)).post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW})
+    assert response.status_code == 429  # из интернета — ждать
+    login(browser(app), "admin", ADMIN_PW)  # из офиса — входит

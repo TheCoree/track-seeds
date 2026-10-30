@@ -20,6 +20,9 @@ services:
       - data:/app/data        # журнал событий, снимки, кеш голоса, отчёты о работе, аккаунты клиентов
     # Сервер 2 ядра / 4 ГБ: обычно ~0.1 ядра и ~400 МБ; потолок — чтобы сбой не съел всю память
     mem_limit: 1500m
+    # Особые права ядра сайту не нужны (не root, порт 8080): взлом процесса не даст больше, чем у пользователя app
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     # Физический динамик, подключённый к серверу (aplay). Номер группы audio на хосте:
     # getent group audio | cut -d: -f3
     # devices:
@@ -43,6 +46,10 @@ services:
     profiles: [domain]
     restart: always
     user: "0:0"  # порты 80 и 443; сайт по-прежнему работает не от root
+    # root без прав root: из всех прав ядра — только занять порты 80 и 443
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
     command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     healthcheck:
       disable: true  # проверка образа — про сайт, а не про Caddy
