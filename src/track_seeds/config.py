@@ -156,6 +156,9 @@ class SeedZone(BaseModel):
     kind: Literal["empty", "low", "motion"] = "empty"
     # четыре угла в долях кадра (x, y)
     points: list[tuple[float, float]] = Field(min_length=4, max_length=4)
+    # стенки вокруг зоны (по четыре угла), которые от семян не меняются: зона «пусто», а они резко
+    # изменились — зону загородили (рука, мешок, сдвиг камеры), а не кончились семена
+    guards: list[list[tuple[float, float]]] = []
 
     @field_validator("points")
     @classmethod
@@ -163,6 +166,13 @@ class SeedZone(BaseModel):
         if not all(0 <= x <= 1 and 0 <= y <= 1 for x, y in points):
             raise ValueError("углы зоны должны быть в пределах кадра (0..1)")
         return points
+
+    @field_validator("guards")
+    @classmethod
+    def _guards_in_frame(cls, guards: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
+        if not all(len(q) == 4 and all(0 <= x <= 1 and 0 <= y <= 1 for x, y in q) for q in guards):
+            raise ValueError("у стенки четыре угла в пределах кадра (0..1)")
+        return guards
 
 
 class SeedSample(BaseModel):
@@ -196,12 +206,12 @@ class SeedsConfig(BaseModel):
                            json_schema_extra=ADVANCED)
     min_brightness: float = Field(15, ge=0, le=255, title="Мин. яркость зоны",
                                   description="Темнее — «не видно» (выключен свет)", json_schema_extra=ADVANCED)
-    # Выключено: камеры смотрят сверху в желоб — руку или лопату в нём детектор людей всё равно не узнаёт,
-    # а человек у желоба обычно обслуживает остановленную дробилку. От «загородили» защищает эталон «пусто»:
-    # кадр, непохожий ни на семена, ни на пустой желоб, не считается.
-    ignore_people: bool = Field(False, title="Не считать пустой зону, которую загородил человек",
-                                description="Детектор людей (+~110 МБ памяти). Обычно не нужен: от «загородили» "
-                                            "защищает эталон «пусто»",
+    # Включено: рабочие ворошат семена в желобе на ходу, и перчатка в зоне выглядела как пустой желоб
+    # (30.10.2026, дробилка 2 — три ложные тревоги). Камера видит рабочего целиком, детектор его находит.
+    # Детектор запускается, только когда желоб читается «пусто», и не чаще раза в секунду.
+    ignore_people: bool = Field(True, title="Не считать пустой зону, которую загородил человек",
+                                description="Детектор людей (+~110 МБ памяти): рука рабочего в желобе — "
+                                            "не «закончились»",
                                 json_schema_extra=ADVANCED)
     unknown_alert_s: float = Field(300, ge=0, title="Сообщить «не видно желоб» через, с",
                                    description="0 — не сообщать", json_schema_extra=UI)

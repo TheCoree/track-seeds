@@ -25,8 +25,8 @@ from ..camera import Frame
 from ..config import SeedsConfig, SeedZone
 from ..detection import Detector
 from ..events import Event, SeedsLevelChanged
-from ..seeds import (Features, Reading, Score, ZoneDebounce, ZoneModel, changed_share, confidence, extract,
-                     extract_patch, is_grayscale, motion_patch, order_quad, zone_box)
+from ..seeds import (Features, Reading, Score, ZoneDebounce, ZoneGuard, ZoneModel, changed_share, confidence,
+                     extract, extract_patch, is_grayscale, motion_patch, order_quad, zone_box)
 
 log = logging.getLogger(__name__)
 
@@ -84,11 +84,12 @@ class _Zone:
     # семена: COVERED — есть, UNCOVERED — пусто; привод: COVERED — движется, UNCOVERED — стоит
     debounce: ZoneDebounce
     reading: Reading = Reading.UNKNOWN
-    reason: str = "start"  # почему UNKNOWN: start, no_samples, people, dark, novel, border
+    reason: str = "start"  # почему UNKNOWN: start, no_samples, people, covered, dark, novel, border
     score: Score | None = None
     brightness: float | None = None
     motion: float | None = None  # привод: доля зоны, изменившейся с прошлой проверки
     previous: tuple[float, np.ndarray] | None = None  # привод: прошлый кадр зоны
+    guard: ZoneGuard | None = None  # стенки вокруг зоны: «пусто» или загородили
     history: deque[tuple[float, float | None]] = field(default_factory=deque)
 
     @property
@@ -153,6 +154,7 @@ class SeedsAnalyzer:
             (full if label == "full" else empty).append(features)
         return _Zone(config=zone, model=ZoneModel(full, empty, self._settings.one_class_tolerance),
                      debounce=ZoneDebounce(s.empty_after_s, s.refill_after_s, s.agreement),
+                     guard=ZoneGuard(zone.guards) if zone.guards else None,
                      reason="start" if full or empty else "no_samples")
 
     def inherit(self, old: "SeedsAnalyzer") -> None:
@@ -168,6 +170,8 @@ class SeedsAnalyzer:
                 zone.history = prev.history
                 if zone.config.points == prev.config.points:
                     zone.previous = prev.previous
+                if zone.guard is not None and prev.guard is not None and zone.guard.quads == prev.guard.quads:
+                    zone.guard = prev.guard
 
     # --- кадр → события ---
 
@@ -182,6 +186,9 @@ class SeedsAnalyzer:
             zone.reading, zone.reason = self._read_motion(zone, image, ts)
         for zone in self._seeds:
             zone.reading, zone.reason = self._read(zone, image, grayscale)
+            if zone.guard is not None and zone.guard.update(image, zone.reading is Reading.COVERED) \
+                    and zone.reading is Reading.UNCOVERED:
+                zone.reading, zone.reason = Reading.UNKNOWN, "covered"
         self._mask_people(image, ts)
         for zone in self._drives:
             zone.debounce.update(ts, zone.reading)
@@ -198,10 +205,11 @@ class SeedsAnalyzer:
 
     def _mask_people(self, image: np.ndarray, ts: float) -> None:
         """Зона, которую загородил человек, — «не определено». Проверяется, только если кадр может что-то
-        изменить: желоб «пусто» или привод не в своём состоянии. Семена есть и привод крутится — детектор не нужен."""
+        изменить: желоб «пусто» или привод не в своём состоянии. Семена есть и привод крутится — детектор не нужен;
+        дробилка стоит — кадры желоба в решение не идут, и пустой желоб в простое детектор не гоняет."""
         if self._detector is None:
             return
-        suspicious = [z for z in self._seeds if z.reading is Reading.UNCOVERED]
+        suspicious = [z for z in self._seeds if z.reading is Reading.UNCOVERED] if self.running is not False else []
         suspicious += [z for z in self._drives if z.reading is not Reading.UNKNOWN and z.reading is not z.debounce.stable]
         if not suspicious:
             return
@@ -388,6 +396,9 @@ class SeedsAnalyzer:
                 color = _COLORS[stable] if stable is not None and zone.model.ready else _COLORS[Reading.UNKNOWN]
             quad = np.array([(x * w, y * h) for x, y in order_quad(zone.config.points)], np.int32)
             cv2.polylines(image, [quad], True, color, thickness, cv2.LINE_AA)
+            for guard in zone.config.guards:  # стенки — тонко и серым: не зоны, а проверка «не загородили ли»
+                cv2.polylines(image, [np.array([(x * w, y * h) for x, y in guard], np.int32)], True,
+                              (170, 170, 170), 1, cv2.LINE_AA)
             if zone.drive:
                 label = f"{number}: {zone.motion:.0%}" if zone.motion is not None else f"{number}: {zone.reason or '?'}"
             else:
@@ -429,6 +440,7 @@ class SeedsAnalyzer:
                 "novelty": round(score.novelty, 2) if score and score.novelty is not None else None,
                 "brightness": round(zone.brightness) if zone.brightness is not None else None,
                 "motion": round(zone.motion, 3) if zone.motion is not None else None,
+                "guard": round(zone.guard.changed, 3) if zone.guard and zone.guard.changed is not None else None,
                 "blind_s": round(zone.debounce.blind_for(now)),
                 "samples": {"full": len(zone.model.full), "empty": len(zone.model.empty)},
                 "separation": round(zone.model.separation, 3) if zone.model.separation else None,

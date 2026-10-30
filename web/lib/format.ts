@@ -73,6 +73,7 @@ export const REASONS: Record<string, string> = {
   start: "набирает данные",
   no_samples: "нет эталонов",
   people: "закрыта человеком",
+  covered: "загорожена",
   dark: "слишком темно",
   novel: "не похоже на эталоны",
   border: "на границе",
