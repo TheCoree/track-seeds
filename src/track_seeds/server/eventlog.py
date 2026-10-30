@@ -110,9 +110,12 @@ class EventLog:
         return str(path.relative_to(self._dir))
 
     def query(self, camera_id: str | None = None, after: int | None = None, before: int | None = None,
-              types: list[str] | None = None, limit: int = 100) -> list[dict]:
+              types: list[str] | None = None, limit: int = 100, tests: bool = True) -> list[dict]:
+        """tests=False — без проверок оповещений из веб-интерфейса (клиентам их не показываем)."""
         sql = "SELECT * FROM events WHERE 1=1"
         params: list[object] = []
+        if not tests:
+            sql += " AND COALESCE(json_extract(data, '$.test'), 0) = 0"
         if camera_id:
             sql += " AND camera_id = ?"
             params.append(camera_id)

@@ -18,7 +18,7 @@ const TYPES: [string, string, string[]][] = [
 ];
 
 export default function EventsPage() {
-  const { overview } = useApp();
+  const { overview, isAdmin } = useApp();
   const [crusher, setCrusher] = useState("");
   const [type, setType] = useState("");
   const [events, setEvents] = useState<EventRow[] | null>(null);
@@ -69,7 +69,9 @@ export default function EventsPage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">События</h1>
-        <p className="text-sm text-muted-foreground">Тревоги, остановки и запуски, связь с камерами — с доставкой уведомлений и озвученными фразами</p>
+        <p className="text-sm text-muted-foreground">
+          {isAdmin ? "Тревоги, остановки и запуски, связь с камерами — с доставкой уведомлений и озвученными фразами" : "Тревоги, остановки и запуски, связь с камерами"}
+        </p>
       </div>
       <div className="flex flex-wrap gap-4">
         <Field className="w-auto">
@@ -94,7 +96,7 @@ export default function EventsPage() {
           </NativeSelect>
         </Field>
       </div>
-      {events === null ? <Skeleton className="h-64 rounded-xl" /> : <EventsList events={events} crushers={overview?.crushers} />}
+      {events === null ? <Skeleton className="h-64 rounded-xl" /> : <EventsList events={events} crushers={overview?.crushers} canEdit={isAdmin} />}
       {events && more && events.length > 0 && (
         <Button variant="outline" className="self-center" onClick={loadMore}>
           <ChevronsDown /> Показать ещё

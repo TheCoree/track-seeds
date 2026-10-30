@@ -2,7 +2,7 @@
 
 import { CircleAlert, CircleCheck, CircleX, Lock, Megaphone, Play, Save, Send } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { useApp } from "@/components/app-shell";
+import { AdminOnly, useApp } from "@/components/app-shell";
 import { SchemaForm, SwitchField } from "@/components/schema-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -16,10 +16,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { type SpeakerTarget, useSpeakerSay, useVoicePlayer, VoiceStatusLine } from "@/components/voice";
 import { api } from "@/lib/api";
-import type { SettingsData } from "@/lib/types";
+import type { Crusher, SettingsData } from "@/lib/types";
 import { useAction } from "@/lib/use-action";
 
 export default function SettingsPage() {
+  return (
+    <AdminOnly>
+      <Settings />
+    </AdminOnly>
+  );
+}
+
+function Settings() {
   const { meta, overview } = useApp();
   const [settings, setSettings] = useState<SettingsData | null>(null);
 
@@ -30,7 +38,7 @@ export default function SettingsPage() {
   if (!settings || !meta) return <Skeleton className="h-96 max-w-4xl rounded-xl" />;
 
   // все сохранённые динамики обеих дробилок — для проверки голоса
-  const targets: SpeakerTarget[] = (overview?.crushers ?? []).flatMap((c) => c.speakers.map((s) => ({ crusherId: c.id, id: s.id, name: `${c.name} → ${s.name}` })));
+  const targets: SpeakerTarget[] = ((overview?.crushers ?? []) as Crusher[]).flatMap((c) => c.speakers.map((s) => ({ crusherId: c.id, id: s.id, name: `${c.name} → ${s.name}` })));
 
   return (
     <div className="flex max-w-4xl flex-col gap-4">
@@ -42,9 +50,11 @@ export default function SettingsPage() {
       <VoiceCard initial={settings.voice} targets={targets} />
       <Alert>
         <Lock />
-        <AlertTitle>{meta.auth ? "Вход защищён паролем" : "Доступ только с этого компьютера"}</AlertTitle>
+        <AlertTitle>{meta.auth ? "Вход по логину и паролю" : "Вход без пароля — только с этого компьютера"}</AlertTitle>
         <AlertDescription>
-          {meta.auth ? "Пароль задаётся в WEB_PASSWORD (.env)." : "WEB_HOST=127.0.0.1. Для доступа из сети задайте WEB_PASSWORD или подключайтесь через ssh -L 8080:localhost:8080."}
+          {meta.auth
+            ? "Клиенты, приглашения и журнал входов — в «Клиенты и доступ». Забыли пароль admin — смените WEB_PASSWORD в .env и перезапустите сервер."
+            : "Заведите разработчика в «Мой аккаунт» — тогда можно открыть сайт в сеть и приглашать клиентов."}
         </AlertDescription>
       </Alert>
     </div>

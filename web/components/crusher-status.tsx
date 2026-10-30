@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { duration, LEVELS, percent, REASONS, since, TONE_DOT, TONE_SOLID, TONE_SOFT, type Tone } from "@/lib/format";
-import type { Crusher, Level, SeedsStatus, ZoneStatus } from "@/lib/types";
+import type { CrusherView, Level, SeedsStatus, ZoneStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export interface CrusherState {
@@ -52,7 +52,7 @@ function state(tone: Tone, title: string, short: string, Icon: LucideIcon, extra
 }
 
 /** Что показать о дробилке одной строкой: связь, ошибка или уровень семян. */
-export function crusherState(c: Crusher): CrusherState {
+export function crusherState(c: CrusherView): CrusherState {
   const st = c.status;
   if (!c.enabled) return state("gray", "Наблюдение выключено", "выключена", PowerOff);
   if (st.state === "error") return state("red", "Ошибка", "ошибка", OctagonX, { detail: st.error });
@@ -77,7 +77,7 @@ export function certainty(seeds: SeedsStatus | null | undefined): number | null 
   return null;
 }
 
-export function LevelHero({ crusher, now }: { crusher: Crusher; now: number }) {
+export function LevelHero({ crusher, now }: { crusher: CrusherView; now: number }) {
   const s = crusherState(crusher);
   const seeds = crusher.status.seeds;
   const sure = certainty(seeds);
@@ -152,7 +152,7 @@ export function ZoneLine({ zone, bandLow = 0.35 }: { zone: ZoneStatus; bandLow?:
   );
 }
 
-export function ConnectionBadge({ crusher }: { crusher: Crusher }) {
+export function ConnectionBadge({ crusher }: { crusher: CrusherView }) {
   const st = crusher.status;
   if (!crusher.enabled)
     return (

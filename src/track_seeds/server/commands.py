@@ -5,12 +5,20 @@ import getpass
 import ipaddress
 import logging
 import sys
+import time
 from pathlib import Path
 
 from pydantic import SecretStr
 
 from ..camera import mask_url
-from ..config import DetectorConfig, NotifyConfig, NtfyConfig, ServerSettings, Settings
+from ..config import (
+    LOOPBACK,
+    DetectorConfig,
+    NotifyConfig,
+    NtfyConfig,
+    ServerSettings,
+    Settings,
+)
 from .store import ConfigStore, GlobalSettings
 
 log = logging.getLogger("track_seeds")
@@ -54,26 +62,94 @@ def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
     import uvicorn
 
     from .app import create_app
+    from .auth import AccountStore, AuthError
     from .workers import Supervisor
 
     web = ServerSettings(_env_file=args.env_file if Path(args.env_file).is_file() else None)
     host, port = args.host or web.host, args.port or web.port
     password = web.password.get_secret_value() if web.password else None
-    if not password and not _is_loopback(host) and not web.allow_no_password:
-        sys.exit(f"Веб-интерфейс открыт для сети ({host}), но пароль не задан. Задайте WEB_PASSWORD в .env "
+    accounts = AccountStore(settings.app.data_dir)
+    if not password and not accounts.has_admin() and not _is_loopback(host) and not web.allow_no_password:
+        sys.exit(f"Веб-интерфейс открыт для сети ({host}), но разработчик не заведён. Задайте WEB_PASSWORD в .env "
+                 "(вход: admin и этот пароль), заведите его командой track-seeds admin "
                  "или оставьте WEB_HOST=127.0.0.1 (тогда — только с этого компьютера "
                  "или через ssh -L 8080:localhost:8080).")
     store = open_store(settings)
     static_dir = web.static_dir or Path(__file__).resolve().parents[3] / "web" / "out"
     supervisor = Supervisor(store, settings.app.data_dir, web.events_keep_days)
-    app = create_app(supervisor, static_dir, password, manage=True, allowed_networks=web.allowed_networks)
+    try:
+        app = create_app(supervisor, static_dir, password, manage=True, allowed_networks=web.allowed_networks,
+                         admin_networks=web.admin_networks, trusted_proxies=web.trusted_proxies,
+                         open_networks=web.admin_networks if web.allow_no_password else LOOPBACK,
+                         public_url=web.public_url, accounts=accounts)
+    except AuthError as e:
+        sys.exit(f"WEB_PASSWORD в .env: {e}")
     log.info("Дробилки: %s; настройки на месте — %s", ", ".join(c.name for c in store.ordered()),
              store.crushers_dir.resolve())
     log.info("Веб-интерфейс: http://%s:%d/%s", "127.0.0.1" if host == "0.0.0.0" else host, port,
              "" if (static_dir / "index.html").is_file() else "  (фронтенд не собран: make web)")
+    if not accounts.has_admin():
+        log.info("Вход без пароля — только с этого компьютера; завести разработчика: «Мой аккаунт» в вебе "
+                 "или track-seeds admin")
     if not _is_loopback(host):
-        log.info("Пускаем только из сетей: %s; вход по паролю", ", ".join(web.allowed_networks))
-    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False, timeout_graceful_shutdown=5)
+        log.info("Сайт — из сетей: %s; панель разработчика — из: %s",
+                 "любых" if "0.0.0.0/0" in web.allowed_networks else ", ".join(web.allowed_networks),
+                 ", ".join(web.admin_networks))
+    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False, timeout_graceful_shutdown=5,
+                proxy_headers=False)
+    return 0
+
+
+def cmd_admin(settings: Settings, args: argparse.Namespace) -> int:
+    """Завести разработчика или сменить ему пароль; --no-2fa — телефон с кодами потерян."""
+    from .auth import AccountStore, AuthError
+
+    accounts = AccountStore(settings.app.data_dir)
+    user = accounts.by_login(args.login)
+    if args.no_2fa:
+        if user is None:
+            sys.exit(f"Нет пользователя {args.login}")
+        accounts.totp_reset(user["id"])
+        accounts.revoke_sessions(user["id"])
+        accounts.record("totp_off", True, user["id"], user["username"], detail="из консоли")
+        print(f"✓ {user['username']}: вход без кода 2FA, все сессии закрыты")
+        return 0
+    if user is not None and user["role"] != "admin":
+        sys.exit(f"{args.login} — клиент, а не разработчик")
+    if not sys.stdin.isatty():
+        sys.exit("Пароль спрашивается в терминале — запустите команду интерактивно (в Docker — с ключом -it)")
+    password = getpass.getpass(f"Новый пароль для {args.login}: ")
+    if password != getpass.getpass("Ещё раз: "):
+        sys.exit("Пароли не совпали — ничего не изменено")
+    try:
+        if user is None:
+            user = accounts.create_user(args.login, "Разработчик", password, "admin")
+            accounts.record("setup", True, user["id"], user["username"], detail="из консоли")
+            print(f"✓ Разработчик {user['username']} заведён")
+        else:
+            accounts.set_password(user["id"], password)
+            accounts.update_user(user["id"], disabled=False)
+            accounts.record("password", True, user["id"], user["username"], detail="из консоли")
+            print(f"✓ Пароль {user['username']} сменён, его сессии закрыты")
+    except AuthError as e:
+        sys.exit(f"✗ {e}")
+    return 0
+
+
+def cmd_users(settings: Settings, args: argparse.Namespace) -> int:
+    from .auth import AccountStore
+
+    accounts = AccountStore(settings.app.data_dir)
+    rows = accounts.users()
+    if not rows:
+        print("Аккаунтов нет: вход без пароля — только с этого компьютера. Завести разработчика: track-seeds admin")
+        return 0
+    for u in rows:
+        seen = time.strftime("%d.%m.%Y %H:%M", time.localtime(u["last_seen"])) if u["last_seen"] else "не входил"
+        flags = [x for x in ("разработчик" if u["role"] == "admin" else "клиент",
+                             "2FA" if u["totp"] else "", "ОТКЛЮЧЁН" if u["disabled"] else "") if x]
+        print(f"{u['username']:<20} {u['name']:<24} {', '.join(flags):<24} сессий {u['sessions']}, "
+              f"виджетов {u['widgets']}, был {seen}")
     return 0
 
 
@@ -228,6 +304,14 @@ def add_commands(sub) -> None:
     p.add_argument("--host", help="адрес (WEB_HOST, по умолчанию 127.0.0.1; другой — только с WEB_PASSWORD)")
     p.add_argument("--port", type=int, help="порт (WEB_PORT, по умолчанию 8080)")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("admin", help="завести разработчика или сменить ему пароль (спросит в терминале)")
+    p.add_argument("login", nargs="?", default="admin", help="логин (по умолчанию admin)")
+    p.add_argument("--no-2fa", action="store_true", help="отключить вход по коду 2FA (телефон потерян)")
+    p.set_defaults(func=cmd_admin)
+
+    p = sub.add_parser("users", help="аккаунты веб-интерфейса: разработчики и клиенты")
+    p.set_defaults(func=cmd_users)
 
     p = sub.add_parser("crushers", help="дробилки: камеры, зоны, эталоны, динамики")
     p.set_defaults(func=cmd_crushers)

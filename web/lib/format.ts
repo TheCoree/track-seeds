@@ -78,3 +78,17 @@ export const REASONS: Record<string, string> = {
   border: "на границе",
   "": "",
 };
+
+/** 22320 → «6 ч 12 мин», 2700 → «45 мин», 20 → «0 мин» — для отчётов, без секунд. */
+export function hoursMinutes(seconds: number): string {
+  const minutes = Math.round(Math.max(0, seconds) / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h && m) return `${h} ч ${m} мин`;
+  if (h) return `${h} ч`;
+  return `${m} мин`;
+}
+
+export function hhmm(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}

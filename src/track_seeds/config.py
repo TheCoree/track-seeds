@@ -359,6 +359,28 @@ class PreviewSettings(_Base, PreviewConfig):
     model_config = SettingsConfigDict(env_prefix="PREVIEW_")
 
 
+LOCAL_NETWORKS = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"]
+LOOPBACK = ["127.0.0.0/8", "::1/128"]
+_ANY = {"any", "*", "all"}
+
+
+def _networks(name: str):
+    """Список сетей из .env: «192.168.1.0/24, 10.0.0.5»; any — откуда угодно."""
+
+    def check(cls, value: object) -> object:
+        networks = _split_csv(value)
+        if isinstance(networks, list) and _ANY & set(networks):
+            return ["0.0.0.0/0", "::/0"]
+        for item in networks if isinstance(networks, list) else []:
+            try:
+                ipaddress.ip_network(item, strict=False)
+            except ValueError:
+                raise ValueError(f"{name}: «{item}» — не сеть (пример: 192.168.1.0/24)") from None
+        return networks
+
+    return field_validator(name.removeprefix("WEB_").lower(), mode="before")(classmethod(check))
+
+
 class ServerSettings(_Base):
     """Веб-интерфейс (`track-seeds serve`)."""
 
@@ -366,29 +388,37 @@ class ServerSettings(_Base):
 
     host: str = "127.0.0.1"
     port: int = 8080
-    # пароль на вход в веб-интерфейс (имя пользователя любое); обязателен, если host — не 127.0.0.1
+    # начальный пароль разработчика (логин admin); сменили здесь — после перезапуска пароль admin
+    # становится этим (так восстанавливают доступ). Обязателен, если host — не 127.0.0.1
     password: SecretStr | None = None
-    # разрешить доступ из сети без пароля (не рекомендуется)
+    # без входа из локальной сети, если разработчика ещё не завели (не рекомендуется)
     allow_no_password: bool = False
-    # откуда пускать — через запятую; по умолчанию только локальная сеть и сам сервер:
-    # даже если порт случайно пробросят в интернет, чужие адреса получат отказ
-    allowed_networks: Annotated[list[str], NoDecode] = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12",
-                                                         "192.168.0.0/16", "fc00::/7", "fe80::/10"]
+    # откуда пускать на сайт вообще — через запятую; по умолчанию только локальная сеть и сам сервер:
+    # даже если порт случайно пробросят в интернет, чужие адреса получат отказ.
+    # Клиентам из интернета — any (и HTTPS через обратный прокси, см. README)
+    allowed_networks: Annotated[list[str], NoDecode] = LOCAL_NETWORKS
+    # откуда работает панель разработчика (настройки, клиенты, приглашения) — даже когда сайт открыт в интернет
+    admin_networks: Annotated[list[str], NoDecode] = LOCAL_NETWORKS
+    # обратный прокси (Caddy, cloudflared) на этих адресах: адрес посетителя — из X-Forwarded-For
+    trusted_proxies: Annotated[list[str], NoDecode] = LOOPBACK
+    # адрес сайта снаружи — для ссылок-приглашений и виджета: https://seeds.example.ru
+    public_url: str = ""
     # собранный фронтенд (web/out); пусто — искать рядом с проектом
     static_dir: Path | None = None
     # сколько дней хранить журнал событий со снимками
     events_keep_days: int = Field(30, ge=1)
 
-    @field_validator("allowed_networks", mode="before")
+    _allowed = _networks("WEB_ALLOWED_NETWORKS")
+    _admin = _networks("WEB_ADMIN_NETWORKS")
+    _proxies = _networks("WEB_TRUSTED_PROXIES")
+
+    @field_validator("public_url")
     @classmethod
-    def _networks(cls, value: object) -> object:
-        networks = _split_csv(value)
-        for item in networks if isinstance(networks, list) else []:
-            try:
-                ipaddress.ip_network(item, strict=False)
-            except ValueError:
-                raise ValueError(f"WEB_ALLOWED_NETWORKS: «{item}» — не сеть (пример: 192.168.1.0/24)") from None
-        return networks
+    def _public_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("WEB_PUBLIC_URL: нужен полный адрес, например https://seeds.example.ru")
+        return value
 
 
 @dataclass(frozen=True, slots=True)

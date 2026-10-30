@@ -35,14 +35,14 @@ function CrusherPageInner() {
   const params = useSearchParams();
   const router = useRouter();
   const id = params.get("id");
-  const { meta, reloadOverview, overview } = useApp();
+  const { meta, reloadOverview, overview, isAdmin } = useApp();
   const { data: crusher, error, reload } = usePoll<Crusher>(id ? `/crushers/${id}` : null, 1500);
 
   if (!id) return <Problem text="Не указана дробилка" />;
   if (!crusher) return error ? <Problem text={error} /> : <Skeleton className="h-96 rounded-xl" />;
 
   const requested = params.get("tab") as Tab;
-  const tab: Tab = TABS.some(([t]) => t === requested) ? requested : "monitor";
+  const tab: Tab = isAdmin && TABS.some(([t]) => t === requested) ? requested : "monitor";
   const reloadAll = () => {
     reload();
     reloadOverview();
@@ -54,7 +54,7 @@ function CrusherPageInner() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{crusher.name}</h1>
         <ConnectionBadge crusher={crusher} />
-        {st.width ? (
+        {isAdmin && st.width ? (
           <span className="text-sm text-muted-foreground">
             {st.width}×{st.height}
             {st.timing_ms ? ` · анализ ${Math.round(st.timing_ms)} мс` : ""}
@@ -63,6 +63,8 @@ function CrusherPageInner() {
       </div>
       {st.error && <Problem text={st.error} />}
       {st.analyzer_error && <Problem text={`Анализ падает: ${st.analyzer_error}`} />}
+      {!isAdmin && <CrusherMonitor crusher={crusher} now={overview?.time ?? Date.now() / 1000} />}
+      {isAdmin && (
 
       <Tabs value={tab} onValueChange={(t) => router.replace(`/crusher?id=${id}&tab=${t}`, { scroll: false })}>
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
@@ -85,6 +87,7 @@ function CrusherPageInner() {
           <CameraPanel key={crusher.id} crusher={crusher} onSaved={reloadAll} />
         </TabsContent>
       </Tabs>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { AppShell } from "@/components/app-shell";
 import { THEME_SCRIPT } from "@/components/theme";
 import "./globals.css";
@@ -9,7 +9,24 @@ const inter = Inter({ subsets: ["latin", "cyrillic"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
   title: "track-seeds",
-  description: "Семена в дробилках: камеры, тревоги, уведомления",
+  description: "Семена в дробилках: камеры, тревоги, отчёты",
+  applicationName: "Дробилки",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  // iPhone: «Поделиться → На экран „Домой“» — открывается без адресной строки, как приложение
+  appleWebApp: { capable: true, title: "Дробилки", statusBarStyle: "default" },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -12,7 +12,14 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from track_seeds.analyzers.seeds import SeedsAnalyzer
-from track_seeds.config import CameraConfig, SeedSample, SeedsConfig, SeedZone, SpeakerConfig, VoiceConfig
+from track_seeds.config import (
+    CameraConfig,
+    SeedSample,
+    SeedsConfig,
+    SeedZone,
+    SpeakerConfig,
+    VoiceConfig,
+)
 from track_seeds.crushers import CRUSHERS, CrusherSpec
 from track_seeds.events import SeedsLevelChanged
 from track_seeds.seeds import confidence
@@ -22,9 +29,10 @@ from track_seeds.server.store import ConfigStore, GlobalSettings
 from track_seeds.server.workers import Supervisor
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_seeds import BOTTOM, scene  # noqa: E402
+from test_seeds import BOTTOM, scene
 
 CSRF = {"X-Track-Seeds": "1"}
+LOCAL = ("127.0.0.1", 50000)  # с этого компьютера: пока разработчика не завели, вход не нужен
 DRIVE = [(0.76, 0.60), (0.96, 0.60), (0.96, 0.90), (0.76, 0.90)]
 
 
@@ -63,7 +71,7 @@ def make_client(tmp_path: Path, *specs: CrusherSpec, password: str | None = None
     store = new_store(tmp_path / "config", *specs)
     sup = Supervisor(store, tmp_path / "data")
     sup.start()
-    return TestClient(create_app(sup, None, password), headers=CSRF), sup
+    return TestClient(create_app(sup, None, password), headers=CSRF, client=LOCAL), sup
 
 
 @pytest.fixture
@@ -254,24 +262,37 @@ def test_crusher_api(crusher_api, tmp_path):
 
 def test_changes_need_csrf_header(crusher_api):
     client, _ = crusher_api
-    plain = TestClient(client.app)  # без заголовка — как форма с чужого сайта
+    plain = TestClient(client.app, client=LOCAL)  # без заголовка — как форма с чужого сайта
     assert plain.post("/api/crushers/drobilka-1/samples", json={"labels": {"z1": "full"}}).status_code == 403
+    assert plain.post("/api/auth/login", json={"username": "admin", "password": "x"}).status_code == 403
     response = plain.get("/api/meta")  # чтение — можно
     assert response.status_code == 200 and response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_password_protects_everything(tmp_path):
-    client, sup = make_client(tmp_path, password="s3cret")
+    """WEB_PASSWORD — разработчик admin: без входа ничего, кроме страницы входа и /api/health."""
+    client, sup = make_client(tmp_path, password="s3cret-pw")
     try:
         assert client.get("/api/meta").status_code == 401
-        assert client.get("/").status_code == 401
+        assert client.get("/api/overview").status_code == 401
+        assert client.get("/api/auth/info").json()["has_admin"]
         started = time.monotonic()
-        assert client.get("/api/meta", auth=("any", "wrong")).status_code == 401
+        wrong = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+        assert wrong.status_code == 401 and wrong.json()["detail"] == "Неверный логин или пароль"
         assert time.monotonic() - started >= 0.9  # перебор паролей замедлен
-        assert client.get("/api/meta", auth=("admin", "s3cret")).status_code == 200
-        health = client.get("/api/health")  # для HEALTHCHECK — без пароля
+        assert client.post("/api/auth/login", json={"username": "nobody", "password": "s3cret-pw"}).status_code == 401
+        ok = client.post("/api/auth/login", json={"username": "Admin", "password": "s3cret-pw"})
+        assert ok.status_code == 200 and ok.json()["role"] == "admin"
+        cookies = ok.headers.get_list("set-cookie")
+        assert all("HttpOnly" in c and "SameSite=strict" in c for c in cookies)
+        assert any(c.startswith("ts_refresh=") and "Path=/api/auth" in c for c in cookies)
+        assert client.get("/api/meta").status_code == 200
+        health = TestClient(client.app, client=("8.8.8.8", 1)).get("/api/health")  # для HEALTHCHECK — без входа
         assert health.status_code == 200 and health.json()["ok"]
+        client.post("/api/auth/logout").raise_for_status()
+        assert client.get("/api/meta").status_code == 401
     finally:
         sup.stop()
 
@@ -403,12 +424,12 @@ def test_only_local_network_is_let_in(tmp_path):
     networks = ServerSettings(_env_file=None).allowed_networks
     store = new_store(tmp_path / "config")
     sup = Supervisor(store, tmp_path / "data")
-    app = create_app(sup, None, "pw", allowed_networks=networks)
-    auth = ("any", "pw")
+    app = create_app(sup, None, "pw-12345678", allowed_networks=networks)
     for address in ("192.168.1.57", "10.0.0.3", "127.0.0.1", "::ffff:192.168.1.57"):
-        assert TestClient(app, client=(address, 5000)).get("/api/meta", auth=auth).status_code == 200, address
+        assert TestClient(app, client=(address, 5000)).get("/api/auth/info").status_code == 200, address
     for address in ("8.8.8.8", "testclient"):
         response = TestClient(app, client=(address, 5000)).get("/api/health")
         assert response.status_code == 403 and "локальной сети" in response.json()["detail"], address
     with pytest.raises(ValueError, match="не сеть"):
         ServerSettings(_env_file=None, allowed_networks="192.168.1.0/24,интернет")
+    assert ServerSettings(_env_file=None, allowed_networks="any").allowed_networks == ["0.0.0.0/0", "::/0"]

@@ -5,13 +5,15 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTick } from "@/lib/api";
 import { REASONS, since } from "@/lib/format";
-import type { Crusher, ZoneStatus } from "@/lib/types";
+import type { CrusherView, ZoneStatus } from "@/lib/types";
+import { useApp } from "./app-shell";
 import { HistoryChart } from "./history-chart";
 import { LevelHero, ZoneLine } from "./crusher-status";
 import { ZoneView } from "./zone-view";
 
 /** Вкладка «Наблюдение»: живой кадр с зонами, состояние и история за 15 минут. */
-export function CrusherMonitor({ crusher, now }: { crusher: Crusher; now: number }) {
+export function CrusherMonitor({ crusher, now }: { crusher: CrusherView; now: number }) {
+  const { isAdmin } = useApp();
   const tick = useTick(1000);
   const seeds = crusher.status.seeds;
   const statuses = seeds?.zones ?? [];
@@ -49,7 +51,7 @@ export function CrusherMonitor({ crusher, now }: { crusher: Crusher; now: number
         <Card size="sm">
           <CardHeader>
             <CardTitle>Зоны</CardTitle>
-            <CardDescription>Вшиты в программу — подобраны по записи с этой камеры</CardDescription>
+            <CardDescription>{isAdmin ? "Вшиты в программу — подобраны по записи с этой камеры" : "Где камера смотрит на семена и на привод"}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {statuses.map((zone) => (
@@ -60,7 +62,7 @@ export function CrusherMonitor({ crusher, now }: { crusher: Crusher; now: number
             ))}
           </CardContent>
         </Card>
-        {oneClass && (
+        {isAdmin && oneClass && (
           <Alert>
             <Info />
             <AlertTitle>Эталона «пусто» пока нет</AlertTitle>

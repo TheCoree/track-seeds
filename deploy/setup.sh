@@ -22,7 +22,7 @@ $DOCKER compose version >/dev/null || { echo "✗ Нет docker compose: sudo ap
 sudo systemctl enable --now docker containerd >/dev/null
 echo "✓ Docker запускается вместе с сервером"
 
-# 2. .env: веб — в локальную сеть, вход по паролю
+# 2. .env: веб — в локальную сеть, вход разработчика admin по паролю (клиентов он приглашает сам)
 [ -f .env ] || cp .env.example .env
 set_env() {
     if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi
@@ -32,7 +32,7 @@ set_env HOST_UID "$(id -u)"
 if ! grep -q '^WEB_PASSWORD=.' .env; then
     password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(9))' 2>/dev/null || openssl rand -base64 9)
     set_env WEB_PASSWORD "$password"
-    echo "✓ Пароль веб-интерфейса: $password   (сохранён в .env; имя пользователя — любое)"
+    echo "✓ Вход разработчика: логин admin, пароль $password   (сохранён в .env)"
 fi
 chmod 600 .env
 port=$(sed -n 's/^WEB_PORT=//p' .env); port=${port:-8080}
