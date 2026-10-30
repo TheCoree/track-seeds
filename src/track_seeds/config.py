@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 type Priority = Literal["min", "low", "default", "high", "urgent"]
@@ -407,7 +407,8 @@ class ServerSettings(_Base):
     # даже если порт случайно пробросят в интернет, чужие адреса получат отказ.
     # Клиентам из интернета — any (и HTTPS через обратный прокси, см. README)
     allowed_networks: Annotated[list[str], NoDecode] = LOCAL_NETWORKS
-    # откуда работает панель разработчика (настройки, клиенты, приглашения) — даже когда сайт открыт в интернет
+    # откуда работает панель разработчика (настройки, клиенты, приглашения) — даже когда сайт открыт в интернет;
+    # any — и из интернета (тогда разработчику стоит включить вход по коду, 2FA)
     admin_networks: Annotated[list[str], NoDecode] = LOCAL_NETWORKS
     # обратный прокси (Caddy, cloudflared) на этих адресах: адрес посетителя — из X-Forwarded-For
     trusted_proxies: Annotated[list[str], NoDecode] = LOOPBACK
@@ -429,6 +430,15 @@ class ServerSettings(_Base):
         if value and not value.startswith(("http://", "https://")):
             raise ValueError("WEB_PUBLIC_URL: нужен полный адрес, например https://seeds.example.ru")
         return value
+
+    @model_validator(mode="after")
+    def _no_open_admin_from_internet(self) -> "ServerSettings":
+        # без пароля пускают из сетей разработчика: из интернета это был бы вход без пароля для всех
+        if self.allow_no_password and any(ipaddress.ip_network(n, strict=False).prefixlen == 0
+                                          for n in self.admin_networks):
+            raise ValueError("WEB_ALLOW_NO_PASSWORD нельзя вместе с WEB_ADMIN_NETWORKS=any: "
+                             "без пароля пускало бы из интернета")
+        return self
 
 
 @dataclass(frozen=True, slots=True)

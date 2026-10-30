@@ -310,6 +310,7 @@ class _Security:
         state["https"] = https
         state["admin_network"] = _within(address, self._admin)
         state["open_network"] = _within(address, self._open)
+        state["local_network"] = _within(address, self._local)
         path, method = scope["path"], scope["method"]
         headers = dict(scope["headers"])
         if path.startswith("/api/") and method not in _SAFE_METHODS and headers.get(CSRF_HEADER.encode()) != b"1":
@@ -696,10 +697,11 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
 
     @public.get("/api/health")
     def health(request: Request) -> Response:
-        """Для HEALTHCHECK в Docker и мониторинга; без входа. Подробности — только из сетей разработчика."""
+        """Для HEALTHCHECK в Docker и мониторинга; без входа. Подробности — только из локальной сети
+        (не из сетей разработчика: их можно открыть в интернет, а здесь входа нет)."""
         alive = sup.bus.alive and sup.announcer.alive
         body: dict[str, Any] = {"ok": alive}
-        if request.state.admin_network:
+        if request.state.local_network:
             body |= {"event_bus": sup.bus.alive, "announcer": sup.announcer.alive,
                      "crushers": {c.name: (w.state if (w := sup.worker(c.id)) else "stopped") for c in store.ordered()},
                      "config_errors": sorted(store.errors)}

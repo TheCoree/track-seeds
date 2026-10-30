@@ -377,3 +377,28 @@ def test_report_counts_work_stops_and_gaps(tmp_path):
     assert round(week["crushers"][0]["buckets"][4]["running"] / 60) == 100  # пятница
     assert report(log, [("d1", "Д")], "month", date(2026, 10, 1), now)["prev"] == "2026-09-01"
     log.close()
+
+
+def test_developer_panel_from_internet_when_allowed(tmp_path, video):  # noqa: F811 — фикстура из test_server
+    """WEB_ADMIN_NETWORKS=any: разработчик входит и из интернета (через Caddy); подробности /api/health
+    без входа — по-прежнему только из локальной сети; «без пароля» вместе с any сервер не принимает."""
+    from track_seeds.config import ServerSettings
+
+    store = new_store(tmp_path / "config", make_spec(tmp_path, str(video)))
+    sup = Supervisor(store, tmp_path / "data")
+    sup.start()
+    try:
+        anywhere = ["0.0.0.0/0", "::/0"]
+        app = create_app(sup, None, ADMIN_PW, allowed_networks=anywhere, admin_networks=anywhere)
+        outside = browser(app, OUTSIDE)
+        assert outside.get("/api/auth/info").json()["admin_here"]
+        login(outside, "admin", ADMIN_PW)
+        assert outside.get("/api/meta").status_code == 200  # настройки — только разработчику
+        assert outside.get("/api/health").json() == {"ok": True}
+        assert "crushers" in browser(app).get("/api/health").json()
+    finally:
+        sup.stop()
+
+    assert ServerSettings(_env_file=None, admin_networks="any").admin_networks == ["0.0.0.0/0", "::/0"]
+    with pytest.raises(ValueError, match="WEB_ALLOW_NO_PASSWORD"):
+        ServerSettings(_env_file=None, admin_networks="any", allow_no_password=True)
