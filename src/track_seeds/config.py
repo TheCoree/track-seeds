@@ -156,6 +156,9 @@ class SeedZone(BaseModel):
     kind: Literal["empty", "low", "motion"] = "empty"
     # четыре угла в долях кадра (x, y)
     points: list[tuple[float, float]] = Field(min_length=4, max_length=4)
+    # стенки вокруг зоны (по четыре угла), которые от семян не меняются: зона «пусто», а они резко
+    # изменились — зону загородили (рука, мешок, сдвиг камеры), а не кончились семена
+    guards: list[list[tuple[float, float]]] = []
 
     @field_validator("points")
     @classmethod
@@ -163,6 +166,13 @@ class SeedZone(BaseModel):
         if not all(0 <= x <= 1 and 0 <= y <= 1 for x, y in points):
             raise ValueError("углы зоны должны быть в пределах кадра (0..1)")
         return points
+
+    @field_validator("guards")
+    @classmethod
+    def _guards_in_frame(cls, guards: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
+        if not all(len(q) == 4 and all(0 <= x <= 1 and 0 <= y <= 1 for x, y in q) for q in guards):
+            raise ValueError("у стенки четыре угла в пределах кадра (0..1)")
+        return guards
 
 
 class SeedSample(BaseModel):

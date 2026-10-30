@@ -408,3 +408,75 @@ def test_people_detector_rests_while_crusher_is_stopped(tmp_path):
     assert people.calls == 0
     run_drive(a, 95, 10, 0.0, True)  # запустили — пустой желоб снова проверяется
     assert people.calls > 0
+
+
+# --- стенки вокруг зоны: «загородили» — не «закончились» ---
+
+LEFT_WALL = [(0.20, 0.62), (0.28, 0.62), (0.28, 0.90), (0.20, 0.90)]
+RIGHT_WALL = [(0.71, 0.62), (0.74, 0.62), (0.74, 0.90), (0.71, 0.90)]
+
+
+def make_one_class(tmp_path: Path, guards: bool) -> SeedsAnalyzer:
+    """Как на дробилках сейчас: эталоны только «есть семена», эталона «пусто» нет."""
+    (tmp_path / "s").mkdir(exist_ok=True)
+    cv2.imwrite(str(tmp_path / "s/full.jpg"), scene(0.95), [cv2.IMWRITE_JPEG_QUALITY, 95])
+    zone = SeedZone(id="b", name="Желоб", kind="empty", points=BOTTOM,
+                    guards=[LEFT_WALL, RIGHT_WALL] if guards else [])
+    settings = SeedsConfig(zones=[zone], samples=[SeedSample(id="1", image="s/full.jpg", ts=0, labels={"b": "full"})],
+                           ignore_people=False)
+    return SeedsAnalyzer(settings, "Дробилка", tmp_path)
+
+
+def with_arm(image: np.ndarray) -> np.ndarray:
+    """Рука в перчатке тянется из-за левой стенки и закрывает зону."""
+    image = image.copy()
+    cv2.line(image, (int(0.05 * W), int(0.78 * H)), (int(0.5 * W), int(0.78 * H)), (120, 140, 175), 40)
+    cv2.ellipse(image, (int(0.5 * W), int(0.78 * H)), (70, 35), 0, 0, 360, (225, 228, 230), -1)
+    return image
+
+
+@pytest.mark.parametrize("guards", [False, True])
+def test_arm_in_chute_is_not_empty_when_walls_are_watched(tmp_path, guards):
+    a = make_one_class(tmp_path, guards)
+    assert [e.level for e in run(a, 0, 15, 0.95)] == ["ok"]
+    events = []
+    for t in range(15, 60):
+        events += a.process(Frame(image=with_arm(scene(0.95)), index=t, ts=1_000_000 + t))
+    if not guards:  # без стенок перчатка непохожа на семена — значит «пусто»: так и были ложные тревоги
+        assert [e.level for e in events] == ["empty"]
+        return
+    assert events == []
+    assert a._seeds[0].reading is Reading.UNKNOWN and a._seeds[0].reason == "covered"
+    assert a.status()["zones"][0]["guard"] > 0.25
+
+
+def test_seeds_running_out_with_walls_unchanged_is_empty(tmp_path):
+    a = make_one_class(tmp_path, guards=True)
+    run(a, 0, 15, 0.95)
+    # семена кончаются, свет понемногу меняется — стенки следуют за светом
+    events = []
+    for t in range(15, 45):
+        events += a.process(Frame(image=scene(0.0, light=1 - 0.006 * (t - 15)), index=t, ts=1_000_000 + t))
+    assert [e.level for e in events] == ["empty"]
+
+
+def test_arm_leaves_an_empty_chute_then_alarm(tmp_path):
+    """Рабочий ворошил семена, ушёл, а желоб пуст: стенки снова как до него — «закончились»."""
+    a = make_one_class(tmp_path, guards=True)
+    run(a, 0, 15, 0.95)
+    events = []
+    for t in range(15, 30):
+        events += a.process(Frame(image=with_arm(scene(0.95 if t % 2 else 0.5)), index=t, ts=1_000_000 + t))
+    events += run(a, 30, 20, 0.0)
+    assert [e.level for e in events] == ["empty"]
+
+
+def test_builtin_walls_do_not_overlap_seed_zones():
+    from track_seeds.crushers import CRUSHERS
+    for spec in CRUSHERS:
+        for zone in spec.zones:
+            quad = np.float32(order_quad(zone.points))
+            for guard in zone.guards:
+                area, _ = cv2.intersectConvexConvex(quad, np.float32(order_quad(guard)))
+                assert area == 0, (spec.id, zone.id, guard)
+        assert any(z.guards for z in spec.zones if z.kind == "empty"), spec.id
