@@ -367,7 +367,7 @@ def test_short_empty_delay_does_not_fire_while_stop_is_being_confirmed(tmp_path)
 def test_default_delays_are_short(tmp_path):
     s = SeedsConfig()
     assert (s.interval_s, s.empty_after_s, s.refill_after_s, s.stopped_after_s) == (0.5, 5, 5, 10)
-    assert not s.ignore_people  # детектор людей не грузится — меньше памяти
+    assert s.ignore_people  # рука рабочего в желобе — не «закончились»
 
 
 class CountingPeople(FakePeople):
