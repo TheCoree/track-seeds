@@ -787,6 +787,26 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
 
         return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers=_STREAM)
 
+    @viewer_api.get("/api/crushers/{crusher_id}/live.jpg")
+    async def live_frame(crusher_id: str, after: int = Query(0, ge=0)) -> Response:
+        """«Оригинал» по кадру — когда поток live.mjpg не доходит: прокси (облако роутера, хостинг) копит
+        бесконечный ответ и не отдаёт. Кадр новее after; нового нет — ждём до 3 с (204 — так и не появился).
+        Кодируется тот же общий кадр, что и для потока: зрители по кадру сервер не нагружают."""
+        crusher_or_404(crusher_id)
+        worker = sup.worker(crusher_id)
+        if worker is None:
+            raise HTTPException(503, "Камера выключена")
+        deadline = time.monotonic() + 3
+        while True:
+            seq, jpeg = await asyncio.to_thread(worker.live_jpeg)
+            if jpeg is not None and seq != after:  # != : после перезапуска сервера номера начинаются заново
+                return Response(jpeg, media_type="image/jpeg", headers=_NO_CACHE | {"X-Frame-Seq": str(seq)})
+            if time.monotonic() >= deadline:
+                if jpeg is None:
+                    raise HTTPException(503, "Нет кадра: камера не подключена")
+                return Response(status_code=204, headers=_NO_CACHE)
+            await asyncio.sleep(0.04)
+
     # --- дробилки: настройки (разработчик) ---
 
     @admin_api.put("/api/crushers/{crusher_id}")

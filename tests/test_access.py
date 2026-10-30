@@ -343,6 +343,27 @@ def test_live_stream_sends_camera_frames(site):
     assert chunk.startswith(b"--frame\r\nContent-Type: image/jpeg") and b"\xff\xd8" in chunk
 
 
+def test_live_by_frame_when_stream_is_buffered(site):
+    """Поток не доходит через прокси — браузер берёт кадры по одному: каждый новее прошлого, клиенту тоже,
+    без входа — нет."""
+    app, _ = site
+    admin = browser(app)
+    login(admin, "admin", ADMIN_PW)
+    wait_for(lambda: admin.get("/api/crushers/drobilka-1").json()["status"]["connected"])
+    first = admin.get("/api/crushers/drobilka-1/live.jpg")
+    assert first.status_code == 200 and first.headers["content-type"] == "image/jpeg"
+    assert first.content.startswith(b"\xff\xd8")
+    seq = int(first.headers["x-frame-seq"])
+    second = admin.get("/api/crushers/drobilka-1/live.jpg", params={"after": seq})
+    assert second.status_code in (200, 204)
+    if second.status_code == 200:
+        assert int(second.headers["x-frame-seq"]) != seq
+    phone = browser(app, OUTSIDE)
+    register(phone, invite(admin))
+    assert phone.get("/api/crushers/drobilka-1/live.jpg").status_code == 200
+    assert TestClient(app, client=LAN).get("/api/crushers/drobilka-1/live.jpg").status_code == 401
+
+
 # --- отчёты ---
 
 def test_report_counts_work_stops_and_gaps(tmp_path):
