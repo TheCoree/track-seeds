@@ -35,10 +35,17 @@ services:
 
   # HTTPS из интернета: запускается, только если в .env задан DOMAIN (deploy/setup.sh пишет
   # COMPOSE_PROFILES=domain — тогда и «docker compose up -d» поднимает Caddy вместе с сайтом).
+  # Caddy — из Debian, в нашем же образе: с сервера Docker Hub бывает недоступен (образ caddy:2
+  # скачивался бесконечно), а apt работает — им ставится всё остальное.
   caddy:
-    image: caddy:2
+    image: track-seeds:latest
+    pull_policy: never  # образ собирает сервис track-seeds; из интернета его не скачать
     profiles: [domain]
     restart: always
+    user: "0:0"  # порты 80 и 443; сайт по-прежнему работает не от root
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    healthcheck:
+      disable: true  # проверка образа — про сайт, а не про Caddy
     # Сеть хоста обязательна: Caddy ходит на 127.0.0.1:8080, и сайт берёт адрес посетителя из
     # X-Forwarded-For. В отдельной docker-сети все посетители пришли бы с 172.x — сайт счёл бы их
     # локальной сетью и показал бы им панель разработчика.
@@ -46,6 +53,8 @@ services:
     environment:  # только это, не весь .env: Caddy не нужны пароли
       DOMAIN: ${DOMAIN:-}
       WEB_PORT: ${WEB_PORT:-8080}
+      XDG_DATA_HOME: /data  # сертификаты — в томе caddy-data
+      XDG_CONFIG_HOME: /config
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data  # сертификаты: при обновлении не теряются (Let's Encrypt ограничивает выпуск)
