@@ -1,5 +1,6 @@
 """Аккаунты и доступ: разработчик, клиенты по приглашению, токены, 2FA, виджет; отчёты о работе; живое видео."""
 
+import ipaddress
 import sys
 import time
 from datetime import date, datetime
@@ -42,8 +43,11 @@ def site(tmp_path, video):  # noqa: F811 — фикстура из test_server
     sup.stop()
 
 
-def browser(app, address=LAN) -> TestClient:
-    return TestClient(app, headers=CSRF, client=address)
+def browser(app, address=LAN, headers=CSRF) -> TestClient:
+    if not ipaddress.ip_address(address[0]).is_private:  # из интернета — как на проде: через Caddy, по HTTPS
+        return TestClient(app, base_url="https://seeds.example.ru", client=("127.0.0.1", address[1]),
+                          headers=headers | {"X-Forwarded-For": address[0], "X-Forwarded-Proto": "https"})
+    return TestClient(app, headers=headers, client=address)
 
 
 def login(client: TestClient, username: str, password: str, code: str = "") -> dict:
@@ -139,9 +143,13 @@ def test_developer_panel_only_from_local_network(site):
     response = proxied.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW})
     assert response.status_code == 401
     assert proxied.get("/api/health").headers["strict-transport-security"]
-    # подделанный X-Forwarded-For не от прокси не учитывается
+    # напрямую на порт сервера из интернета — отказ, даже с подделанным X-Forwarded-For
     spoofed = TestClient(app, headers=CSRF | {"X-Forwarded-For": "192.168.1.5"}, client=OUTSIDE)
-    assert spoofed.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW}).status_code == 401
+    response = spoofed.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW})
+    assert response.status_code == 403 and "HTTPS" in response.json()["detail"]
+    # посетитель прислал свой X-Forwarded-For, прокси дописал настоящий адрес — берётся настоящий
+    chained = TestClient(app, headers=CSRF | {"X-Forwarded-For": "192.168.1.5, 8.8.8.8"}, client=("127.0.0.1", 1))
+    assert chained.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW}).status_code == 401
 
     lan = browser(app)
     login(lan, "admin", ADMIN_PW)
@@ -266,7 +274,7 @@ def test_widget_key_reads_status_only(site):
     token = created["token"]
     assert token.startswith("tsw_")
 
-    widget = TestClient(app, client=OUTSIDE, headers={"Authorization": f"Bearer {token}"})
+    widget = browser(app, OUTSIDE, {"Authorization": f"Bearer {token}"})
     data = wait_for(lambda: (d := widget.get("/api/widget").json())["crushers"][0]["state"] and d)
     crusher = data["crushers"][0]
     assert crusher["name"] == "Дробилка 1" and crusher["label"] and set(crusher["today"]) >= {"running", "stopped"}

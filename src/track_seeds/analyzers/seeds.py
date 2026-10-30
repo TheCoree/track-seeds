@@ -37,6 +37,10 @@ log = logging.getLogger(__name__)
 _OCCLUSION = 0.1
 _PEOPLE_REUSE_S = 1.0
 _HISTORY_S = 15 * 60
+# Состояние до перезапуска сервера (обновление, перезагрузка) продолжается, если с последнего кадра прошло
+# не больше этого: за такой перерыв «семена есть уже 2 часа» остаётся правдой, а если что-то изменилось,
+# кадры это подтвердят за обычное окно. Перерыв дольше — неизвестно, что было, начинаем заново.
+RESUME_MAX_GAP_S = 15 * 60
 _HISTORY_STEP_S = 1.0  # история для графика — не чаще точки в секунду, как бы часто ни проверяли
 
 # Кадр привода сравнивается с предыдущим, только если тот не старше стольких интервалов проверки
@@ -130,6 +134,7 @@ class SeedsAnalyzer:
         self._last_known: str | None = None
         self._last_alert = 0.0
         self._reminders = 0
+        self._last_ts: float | None = None  # время последнего кадра
         self._people: list[tuple[int, int, int, int]] = []
         self._people_at = float("-inf")
         self._lock = threading.Lock()  # process() — в потоке конвейера, status() — из веб-сервера
@@ -161,6 +166,7 @@ class SeedsAnalyzer:
         """Продолжить с состоянием прежнего анализатора (настройки поменяли — тревога не повторяется)."""
         self.level, self.level_since, self._last_known = old.level, old.level_since, old._last_known
         self._last_alert, self._reminders = old._last_alert, old._reminders
+        self._last_ts = old._last_ts
         if self._drives and old._drives:
             self.running, self.running_since = old.running, old.running_since
         previous = {z.config.id: z for z in old._zones}
@@ -173,6 +179,48 @@ class SeedsAnalyzer:
                 if zone.guard is not None and prev.guard is not None and zone.guard.quads == prev.guard.quads:
                     zone.guard = prev.guard
 
+    # --- состояние между перезапусками сервера ---
+
+    def snapshot(self) -> dict | None:
+        """Что знаем на момент последнего кадра; None — кадров ещё не было."""
+        with self._lock:
+            if self._last_ts is None:
+                return None
+            return {"ts": self._last_ts, "level": self.level, "level_since": self.level_since,
+                    "last_known": self._last_known, "running": self.running, "running_since": self.running_since,
+                    "last_alert": self._last_alert, "reminders": self._reminders,
+                    "zones": {z.config.id: {"drive": z.drive, "state": z.debounce.stable.value,
+                                            "since": z.debounce.stable_since}
+                              for z in self._zones if z.debounce.stable is not None}}
+
+    def restore(self, snapshot: dict, now: float) -> bool:
+        """Продолжить с состояния до перезапуска сервера, если перерыв короткий (RESUME_MAX_GAP_S).
+        Тревога о том же не повторяется; изменилось за перерыв — кадры подтвердят и сообщат как обычно."""
+        ts = snapshot.get("ts")
+        if not isinstance(ts, (int, float)) or not 0 <= now - ts <= RESUME_MAX_GAP_S:
+            return False
+        def number(value: object) -> float | None:
+            return float(value) if isinstance(value, (int, float)) else None
+
+        with self._lock:
+            level = snapshot.get("level")
+            self.level = level if level in _LEVEL_TEXT else None
+            self.level_since = number(snapshot.get("level_since")) if self.level else None
+            last_known = snapshot.get("last_known")
+            self._last_known = last_known if last_known in _LEVEL_TEXT else None
+            self._last_alert = number(snapshot.get("last_alert")) or 0.0
+            reminders = snapshot.get("reminders")
+            self._reminders = reminders if isinstance(reminders, int) else 0
+            zones = snapshot.get("zones") if isinstance(snapshot.get("zones"), dict) else {}
+            for zone in self._zones:
+                saved = zones.get(zone.config.id)
+                if isinstance(saved, dict) and saved.get("drive") == zone.drive \
+                        and saved.get("state") in (Reading.COVERED, Reading.UNCOVERED):
+                    zone.debounce.restore(Reading(saved["state"]), number(saved.get("since")))
+            if self._drives and isinstance(snapshot.get("running"), bool):
+                self.running, self.running_since = snapshot["running"], number(snapshot.get("running_since"))
+        return True
+
     # --- кадр → события ---
 
     def process(self, frame: Frame) -> list[Event]:
@@ -181,6 +229,7 @@ class SeedsAnalyzer:
 
     def _process(self, frame: Frame) -> list[Event]:
         image, ts = frame.image, frame.ts
+        self._last_ts = ts
         grayscale = is_grayscale(image)
         for zone in self._drives:
             zone.reading, zone.reason = self._read_motion(zone, image, ts)
