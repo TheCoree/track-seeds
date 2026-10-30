@@ -1,9 +1,9 @@
 "use client";
 
-import { Ban, CircleCheck, CircleX, Copy, KeyRound, Link2, LogOut, MoreHorizontal, Plus, Share2, ShieldCheck, Trash2, UserCheck, X } from "lucide-react";
+import { Ban, CircleCheck, CircleX, Copy, History, KeyRound, LogOut, MoreHorizontal, Share2, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AdminOnly, useApp } from "@/components/app-shell";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Segmented, type SegmentOption } from "@/components/segmented";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +14,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
@@ -31,11 +31,11 @@ import type { AuthLogRow, Invite, User } from "@/lib/types";
 import { useAction } from "@/lib/use-action";
 import { cn } from "@/lib/utils";
 
-const HOURS: [number, string][] = [
-  [1, "1 час"],
-  [24, "сутки"],
-  [72, "3 дня"],
-  [168, "неделя"],
+const HOURS: SegmentOption<string>[] = [
+  { value: "1", label: "1 час" },
+  { value: "24", label: "Сутки" },
+  { value: "72", label: "3 дня" },
+  { value: "168", label: "Неделя" },
 ];
 
 const ACTIONS: Record<string, string> = {
@@ -49,9 +49,9 @@ const ACTIONS: Record<string, string> = {
   totp_on: "включён вход по коду",
   totp_off: "выключен вход по коду",
   invite: "создана ссылка",
-  widget: "создан виджет",
-  disable: "отключён",
-  enable: "включён",
+  widget: "добавлен виджет",
+  disable: "доступ отключён",
+  enable: "доступ включён",
   delete: "удалён",
 };
 
@@ -63,87 +63,170 @@ export default function AccessPage() {
   );
 }
 
+/** Люди с доступом и ожидающие приглашения — одним списком; приглашение и журнал — в диалогах. */
 function Access() {
   const { me } = useApp();
   const [users, setUsers] = useState<User[] | null>(null);
-  const [invites, setInvites] = useState<Invite[] | null>(null);
-  const [log, setLog] = useState<AuthLogRow[] | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviting, setInviting] = useState(false);
+  const [journal, setJournal] = useState(false);
   const [link, setLink] = useState<{ url: string; title: string } | null>(null);
   const base = me?.public_url || (typeof window !== "undefined" ? window.location.origin : "");
-  const local = /^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(base);
 
   const reload = useCallback(() => {
     api.get<User[]>("/admin/users").then(setUsers);
     api.get<{ invites: Invite[] }>("/admin/invites").then((r) => setInvites(r.invites));
-    api.get<AuthLogRow[]>("/admin/log?limit=60").then(setLog);
   }, []);
   useEffect(() => {
     reload();
   }, [reload]);
 
   const showLink = (code: string, title: string) => {
+    setInviting(false);
     setLink({ url: `${base}/register/?code=${encodeURIComponent(code)}`, title });
     reload();
   };
+  const now = Date.now() / 1000;
+  const waiting = invites.filter((i) => !i.used && i.expires > now && !i.user_id);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Клиенты и доступ</h1>
-        <p className="text-sm text-muted-foreground">Клиенты видят дробилки в реальном времени, события и отчёты — без настроек. Регистрация — только по вашей одноразовой ссылке.</p>
-      </div>
-      {me?.open && (
-        <Alert variant="destructive">
-          <AlertTitle>Сначала заведите разработчика</AlertTitle>
-          <AlertDescription>Сейчас вход без пароля с этого компьютера. «Мой аккаунт» → логин и пароль — потом приглашайте клиентов.</AlertDescription>
-        </Alert>
-      )}
-      {local && (
-        <Alert>
-          <Link2 />
-          <AlertTitle>Ссылки ведут на адрес в локальной сети</AlertTitle>
-          <AlertDescription>
-            {base} откроется только в сети завода. Чтобы клиенты заходили с телефона откуда угодно, откройте сайт в интернет по HTTPS и задайте WEB_PUBLIC_URL (см. README → «Доступ для клиентов»).
-          </AlertDescription>
-        </Alert>
-      )}
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="flex flex-col gap-4 lg:col-span-2">
-          <InviteCard onCreated={(code) => showLink(code, "Ссылка для регистрации")} />
-          <InvitesCard invites={invites} onChanged={reload} />
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Клиенты</h1>
+          <p className="text-sm text-muted-foreground">Видят дробилки, события и отчёты — без настроек</p>
         </div>
-        <div className="flex flex-col gap-4 lg:col-span-3">
-          <UsersCard users={users} myId={me?.user_id ?? null} onChanged={reload} onResetLink={(code, login) => showLink(code, `Новый пароль для ${login}`)} />
-          <LogCard log={log} />
-        </div>
+        <Button size="lg" disabled={me?.open} onClick={() => setInviting(true)}>
+          <UserPlus /> Пригласить
+        </Button>
       </div>
-      <Dialog open={link !== null} onOpenChange={(open) => !open && setLink(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{link?.title}</DialogTitle>
-            <DialogDescription>Ссылка показывается один раз и работает для одного человека. Отправьте её в мессенджер.</DialogDescription>
-          </DialogHeader>
-          <code className="break-all rounded-lg bg-muted p-3 text-xs">{link?.url}</code>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => link && copyText(link.url, "Ссылка скопирована")}>
-              <Copy /> Скопировать
-            </Button>
-            {typeof navigator !== "undefined" && "share" in navigator && (
-              <Button variant="outline" onClick={() => link && navigator.share({ title: "track-seeds", text: "Регистрация: дробилки в реальном времени", url: link.url }).catch(() => {})}>
-                <Share2 /> Отправить
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {me?.open && <p className="text-sm text-muted-foreground">Чтобы приглашать, сначала заведите разработчика в «Мой аккаунт».</p>}
+
+      <Card className="py-0">
+        {users === null ? (
+          <Skeleton className="m-4 h-24" />
+        ) : (
+          <ItemGroup className="gap-0 divide-y">
+            {waiting.map((i) => (
+              <WaitingRow key={`i${i.id}`} invite={i} now={now} onChanged={reload} />
+            ))}
+            {users.map((u) => (
+              <UserRow key={u.id} user={u} me={u.id === me?.user_id} now={now} onChanged={reload} onResetLink={(code) => showLink(code, `Новый пароль для ${u.name}`)} />
+            ))}
+          </ItemGroup>
+        )}
+      </Card>
+
+      <Button variant="ghost" className="self-start text-muted-foreground" onClick={() => setJournal(true)}>
+        <History /> Журнал входов
+      </Button>
+
+      <InviteDialog open={inviting} onClose={() => setInviting(false)} base={base} onCreated={(code) => showLink(code, "Ссылка готова")} />
+      <LinkDialog link={link} onClose={() => setLink(null)} />
+      <JournalDialog open={journal} onClose={() => setJournal(false)} />
     </div>
   );
 }
 
-function InviteCard({ onCreated }: { onCreated: (code: string) => void }) {
+function Person({ name, dim }: { name: string; dim?: boolean }) {
+  return (
+    <ItemMedia>
+      <Avatar size="lg">
+        <AvatarFallback className={cn("font-semibold", dim && "border border-dashed bg-transparent")}>{name.slice(0, 1).toUpperCase() || "?"}</AvatarFallback>
+      </Avatar>
+    </ItemMedia>
+  );
+}
+
+function UserRow({ user: u, me, now, onChanged, onResetLink }: { user: User; me: boolean; now: number; onChanged: () => void; onResetLink: (code: string) => void }) {
+  const { busy, run } = useAction();
+  const [removing, setRemoving] = useState(false);
+  const online = u.last_seen && now - u.last_seen < 20 * 60;
+  const toggle = () =>
+    run("u", () => api.patch(`/admin/users/${u.id}`, { disabled: !u.disabled }).then(onChanged), u.disabled ? "Доступ включён" : "Доступ отключён");
+  const logout = () => run("u", () => api.post(`/admin/users/${u.id}/logout`).then(onChanged), "Вышел на всех устройствах");
+  const reset = () =>
+    run("u", async () => {
+      const { code } = await api.post<{ code: string }>(`/admin/users/${u.id}/reset`, { hours: 24 });
+      onResetLink(code);
+    });
+  const remove = () => run("u", () => api.del(`/admin/users/${u.id}`).then(onChanged), `${u.name} удалён`);
+
+  return (
+    <Item role="listitem" className={cn("rounded-none px-4 py-3 not-first:border-t-border", u.disabled && "opacity-55")}>
+      <Person name={u.name} />
+      <ItemContent className="min-w-0">
+        <ItemTitle className="text-base">
+          {u.name}
+          {me && <span className="text-sm font-normal text-muted-foreground">вы</span>}
+        </ItemTitle>
+        <ItemDescription className="truncate">
+          {u.disabled ? "доступ отключён" : u.role === "admin" ? `${u.username} · разработчик` : online ? "сейчас на сайте" : u.last_seen ? `был(а) ${dateTime(u.last_seen)}` : "ещё не заходил(а)"}
+        </ItemDescription>
+      </ItemContent>
+      {!me && (
+        <ItemActions>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Действия" disabled={busy !== null} />}>{busy ? <Spinner /> : <MoreHorizontal />}</DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={toggle}>
+              {u.disabled ? <UserCheck /> : <Ban />} {u.disabled ? "Вернуть доступ" : "Отключить доступ"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={logout}>
+              <LogOut /> Выйти на всех устройствах
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={reset}>
+              <KeyRound /> Ссылка для нового пароля
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}>
+              <Trash2 /> Удалить
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        </ItemActions>
+      )}
+      <AlertDialog open={removing} onOpenChange={setRemoving}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить {u.name}?</AlertDialogTitle>
+            <AlertDialogDescription>Доступ пропадёт сразу. Вернуть — только новой ссылкой.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={remove}>
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Item>
+  );
+}
+
+function WaitingRow({ invite, now, onChanged }: { invite: Invite; now: number; onChanged: () => void }) {
+  const { busy, run } = useAction();
+  return (
+    <Item role="listitem" className="rounded-none px-4 py-3 not-first:border-t-border">
+      <Person name={invite.note} dim />
+      <ItemContent className="min-w-0">
+        <ItemTitle className="text-base">{invite.note || "Приглашение"}</ItemTitle>
+        <ItemDescription>ждём регистрации · ссылка действует ещё {duration(invite.expires - now).replace(/ \d+ с$/, "")}</ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => run("x", () => api.del(`/admin/invites/${invite.id}`).then(onChanged), "Приглашение отменено")}>
+          Отменить
+        </Button>
+      </ItemActions>
+    </Item>
+  );
+}
+
+function InviteDialog({ open, onClose, base, onCreated }: { open: boolean; onClose: () => void; base: string; onCreated: (code: string) => void }) {
   const [note, setNote] = useState("");
   const [hours, setHours] = useState(24);
   const { busy, run } = useAction();
+  const local = /^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(base);
   const create = () =>
     run("invite", async () => {
       const { code } = await api.post<{ code: string }>("/admin/invites", { note, hours });
@@ -151,192 +234,78 @@ function InviteCard({ onCreated }: { onCreated: (code: string) => void }) {
       onCreated(code);
     });
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Пригласить клиента</CardTitle>
-        <CardDescription>Одноразовая ссылка: по ней зарегистрируется один человек, потом она гаснет.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Пригласить клиента</DialogTitle>
+          <DialogDescription>По ссылке зарегистрируется один человек, потом она перестанет работать.</DialogDescription>
+        </DialogHeader>
         <Field>
-          <FieldLabel>Для кого (видно только вам)</FieldLabel>
-          <Input placeholder="Иван, мастер смены" maxLength={120} value={note} onChange={(e) => setNote(e.target.value)} />
+          <FieldLabel>Кого приглашаете</FieldLabel>
+          <Input autoFocus placeholder="Иван, мастер смены" maxLength={120} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         <Field>
           <FieldLabel>Ссылка действует</FieldLabel>
-          <NativeSelect value={hours} onChange={(e) => setHours(Number(e.target.value))}>
-            {HOURS.map(([value, label]) => (
-              <NativeSelectOption key={value} value={value}>
-                {label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+          <Segmented label="Ссылка действует" value={String(hours)} onChange={(v) => setHours(Number(v))} options={HOURS} className="w-full" itemClassName="flex-1" />
         </Field>
-        <Button className="self-start" disabled={busy === "invite"} onClick={create}>
-          {busy === "invite" ? <Spinner /> : <Plus />} Создать ссылку
+        {local && <p className="text-xs text-muted-foreground">Ссылка откроется только в сети завода: сайт не открыт в интернет (WEB_PUBLIC_URL, см. README).</p>}
+        <Button disabled={busy === "invite"} onClick={create}>
+          {busy === "invite" ? <Spinner /> : null} Создать ссылку
         </Button>
-      </CardContent>
-    </Card>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function InvitesCard({ invites, onChanged }: { invites: Invite[] | null; onChanged: () => void }) {
-  const { busy, run } = useAction();
-  const now = Date.now() / 1000;
-  const revoke = (i: Invite) => run(`invite-${i.id}`, () => api.del(`/admin/invites/${i.id}`).then(onChanged), "Ссылка отозвана");
+function LinkDialog({ link, onClose }: { link: { url: string; title: string } | null; onClose: () => void }) {
+  const canShare = typeof navigator !== "undefined" && "share" in navigator;
   return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle>Ссылки</CardTitle>
-        <CardDescription>Действующие и использованные за неделю</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {invites === null ? (
-          <Skeleton className="h-20" />
-        ) : invites.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Ссылок нет</p>
-        ) : (
-          <ul className="divide-y rounded-lg border">
-            {invites.map((i) => {
-              const expired = !i.used && i.expires < now;
-              return (
-                <li key={i.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{i.note || (i.user_id ? `новый пароль: ${i.for_user}` : "без подписи")}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {i.used ? `использована ${dateTime(i.used)}${i.used_login ? ` · ${i.used_login}` : ""}` : expired ? "истекла" : `ещё ${duration(i.expires - now)}`}
-                    </div>
-                  </div>
-                  {i.used ? (
-                    <CircleCheck className="size-4 text-emerald-600" />
-                  ) : expired ? (
-                    <CircleX className="size-4 text-muted-foreground" />
-                  ) : (
-                    <Button variant="ghost" size="sm" disabled={busy === `invite-${i.id}`} onClick={() => revoke(i)}>
-                      <X /> Отозвать
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <Dialog open={link !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{link?.title}</DialogTitle>
+          <DialogDescription>Отправьте её в мессенджер. Больше она не покажется.</DialogDescription>
+        </DialogHeader>
+        <code className="break-all rounded-lg bg-muted p-3 text-xs">{link?.url}</code>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button onClick={() => link && copyText(link.url, "Ссылка скопирована")} className={canShare ? "" : "sm:col-span-2"}>
+            <Copy /> Скопировать
+          </Button>
+          {canShare && (
+            <Button variant="outline" onClick={() => link && navigator.share({ title: "track-seeds", url: link.url }).catch(() => {})}>
+              <Share2 /> Отправить
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function UsersCard({ users, myId, onChanged, onResetLink }: { users: User[] | null; myId: number | null; onChanged: () => void; onResetLink: (code: string, login: string) => void }) {
-  const { busy, run } = useAction();
-  const [removing, setRemoving] = useState<User | null>(null);
-  const now = Date.now() / 1000;
-
-  const toggle = (u: User) =>
-    run(`user-${u.id}`, () => api.patch(`/admin/users/${u.id}`, { disabled: !u.disabled }).then(onChanged), u.disabled ? `${u.name}: доступ включён` : `${u.name}: доступ отключён, сессии закрыты`);
-  const logout = (u: User) => run(`user-${u.id}`, () => api.post(`/admin/users/${u.id}/logout`).then(onChanged), `${u.name}: все устройства вышли`);
-  const reset = (u: User) =>
-    run(`user-${u.id}`, async () => {
-      const { code } = await api.post<{ code: string }>(`/admin/users/${u.id}/reset`, { hours: 24 });
-      onResetLink(code, u.username);
-    });
-  const remove = (u: User) => run(`user-${u.id}`, () => api.del(`/admin/users/${u.id}`).then(onChanged), `${u.name} удалён`);
-
+function JournalDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [log, setLog] = useState<AuthLogRow[] | null>(null);
+  useEffect(() => {
+    if (open) api.get<AuthLogRow[]>("/admin/log?limit=100").then(setLog);
+  }, [open]);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Аккаунты</CardTitle>
-        <CardDescription>Отключённый аккаунт теряет доступ сразу, вместе с открытым видео и виджетом</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {users === null ? (
-          <Skeleton className="h-32" />
-        ) : (
-          <ul className="divide-y rounded-lg border">
-            {users.map((u) => {
-              const online = u.last_seen && now - u.last_seen < 20 * 60;
-              return (
-                <li key={u.id} className={cn("flex items-center gap-3 px-3 py-2.5", u.disabled && "opacity-60")}>
-                  <span className={cn("size-2 shrink-0 rounded-full", online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")} title={online ? "заходил(а) последние 20 минут" : ""} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="font-medium">{u.name}</span>
-                      <span className="text-sm text-muted-foreground">{u.username}</span>
-                      <Badge variant={u.role === "admin" ? "default" : "secondary"}>{u.role === "admin" ? "разработчик" : "клиент"}</Badge>
-                      {u.totp && (
-                        <Badge variant="outline">
-                          <ShieldCheck /> 2FA
-                        </Badge>
-                      )}
-                      {u.disabled && <Badge variant="destructive">отключён</Badge>}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {u.last_seen ? `был(а) ${dateTime(u.last_seen)}` : "не входил(а)"} · устройств {u.sessions}
-                      {u.widgets ? ` · виджетов ${u.widgets}` : ""}
-                    </div>
-                  </div>
-                  {u.id !== myId && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Действия" disabled={busy === `user-${u.id}`} />}>
-                        {busy === `user-${u.id}` ? <Spinner /> : <MoreHorizontal />}
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => toggle(u)}>
-                          {u.disabled ? <UserCheck /> : <Ban />} {u.disabled ? "Включить доступ" : "Отключить доступ"}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => logout(u)}>
-                          <LogOut /> Выйти на всех устройствах
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => reset(u)}>
-                          <KeyRound /> Ссылка для нового пароля
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => setRemoving(u)}>
-                          <Trash2 /> Удалить
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </CardContent>
-      <AlertDialog open={removing !== null} onOpenChange={(open) => !open && setRemoving(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Удалить {removing?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>Аккаунт, его сессии и ключи виджета удалятся. Вернуть доступ — только новой ссылкой.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => removing && remove(removing)}>
-              Удалить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
-  );
-}
-
-function LogCard({ log }: { log: AuthLogRow[] | null }) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle>Журнал входов</CardTitle>
-        <CardDescription>Входы, отказы, ссылки и смена паролей — 180 дней</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Журнал входов</DialogTitle>
+          <DialogDescription>Входы, отказы, ссылки, смена паролей — за 180 дней</DialogDescription>
+        </DialogHeader>
         {log === null ? (
-          <Skeleton className="h-32" />
+          <Skeleton className="h-40" />
         ) : (
-          <ul className="max-h-96 divide-y overflow-y-auto rounded-lg border text-sm">
+          <ul className="-mx-1 max-h-[60vh] divide-y overflow-y-auto text-sm">
             {log.map((row) => (
-              <li key={row.id} className="flex items-start gap-2 px-3 py-1.5">
+              <li key={row.id} className="flex items-start gap-2 px-1 py-2">
                 {row.ok ? <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" /> : <CircleX className="mt-0.5 size-4 shrink-0 text-destructive" />}
                 <div className="min-w-0 flex-1">
-                  <span className="font-medium">{row.username ?? "—"}</span> · {ACTIONS[row.action] ?? row.action}
-                  {row.detail && <span className="text-muted-foreground"> · {row.detail}</span>}
+                  <div>
+                    <span className="font-medium">{row.username ?? "—"}</span> · {ACTIONS[row.action] ?? row.action}
+                    {row.detail && <span className="text-muted-foreground"> · {row.detail}</span>}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {dateTime(row.ts)}
                     {row.ip ? ` · ${row.ip}` : ""}
@@ -347,7 +316,7 @@ function LogCard({ log }: { log: AuthLogRow[] | null }) {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </DialogContent>
+    </Dialog>
   );
 }

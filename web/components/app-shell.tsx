@@ -54,7 +54,7 @@ const NAV: NavItem[] = [
 ];
 const ADMIN_NAV: NavItem[] = [
   ["/settings", "Уведомления и голос", BellRing],
-  ["/access", "Клиенты и доступ", UsersRound],
+  ["/access", "Клиенты", UsersRound],
 ];
 
 const SIDEBAR_KEY = "track-seeds:sidebar";

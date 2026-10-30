@@ -9,6 +9,24 @@ import { XIcon, CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Load
 
 const toast = ToastPrimitive.createToastManager()
 
+/**
+ * Уведомления выше диалогов (z-100), но для модального диалога нажатие на них — «мимо», и он бы закрылся.
+ * Обёртка onOpenChange для Dialog/Sheet: такое закрытие отменяется — уведомление можно смахнуть или закрыть,
+ * а диалог остаётся.
+ */
+function keepOpenOnToast<D extends { reason: string; event: Event; cancel: () => void }>(
+  onOpenChange?: (open: boolean, details: D) => void
+) {
+  return (open: boolean, details: D) => {
+    const target = details.event?.target
+    if (!open && details.reason === "outside-press" && target instanceof Element && target.closest("[data-slot=toast-viewport]")) {
+      details.cancel()
+      return
+    }
+    onOpenChange?.(open, details)
+  }
+}
+
 function ToastProvider({ ...props }: ToastPrimitive.Provider.Props) {
   return <ToastPrimitive.Provider {...props} />
 }
@@ -22,7 +40,7 @@ function ToastViewport({ className, ...props }: ToastPrimitive.Viewport.Props) {
     <ToastPrimitive.Viewport
       data-slot="toast-viewport"
       className={cn(
-        "pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto w-auto max-w-sm outline-none sm:right-4 sm:left-auto sm:mx-0 sm:w-full",
+        "pointer-events-none fixed inset-x-4 bottom-4 z-100 mx-auto w-auto max-w-sm outline-none sm:right-4 sm:left-auto sm:mx-0 sm:w-full",
         className
       )}
       {...props}
@@ -229,6 +247,7 @@ export {
   ToastTitle,
   ToastViewport,
   createToastManager,
+  keepOpenOnToast,
   toast,
   useToastManager,
 }

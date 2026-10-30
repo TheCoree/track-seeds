@@ -2,13 +2,14 @@
 
 import { KeyRound, LogIn, ShieldAlert } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useId, useState } from "react";
+import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { CodeInput } from "@/components/code-input";
 import { api, ApiError } from "@/lib/api";
 import type { AuthInfo } from "@/lib/types";
 
@@ -35,6 +36,7 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ids = { user: useId(), pass: useId(), code: useId() };
+  const form = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     api
@@ -65,7 +67,7 @@ function LoginForm() {
 
   return (
     <Card className="w-full max-w-sm">
-      <form onSubmit={submit}>
+      <form ref={form} onSubmit={submit}>
         <CardHeader>
           <CardTitle className="text-xl">Вход</CardTitle>
           <CardDescription>Дробилки в реальном времени и отчёты о работе</CardDescription>
@@ -73,18 +75,10 @@ function LoginForm() {
         <CardContent className="flex flex-col gap-4 pt-4">
           {needCode ? (
             <Field>
-              <FieldLabel htmlFor={ids.code}>Код из приложения-аутентификатора</FieldLabel>
-              <Input
-                id={ids.code}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9 ]*"
-                maxLength={7}
-                autoFocus
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="text-center font-mono text-lg tracking-[0.3em]"
-              />
+              <FieldLabel htmlFor={ids.code} className="justify-center">
+                Код из приложения-аутентификатора
+              </FieldLabel>
+              <CodeInput autoFocus value={code} onChange={setCode} onComplete={() => setTimeout(() => form.current?.requestSubmit())} />
             </Field>
           ) : (
             <>
@@ -106,7 +100,7 @@ function LoginForm() {
           )}
         </CardContent>
         <CardFooter className="mt-4 flex flex-col items-stretch gap-3">
-          <Button type="submit" size="lg" disabled={busy}>
+          <Button type="submit" size="lg" disabled={busy || (needCode && code.length !== 6)}>
             {busy ? <Spinner /> : needCode ? <KeyRound /> : <LogIn />}
             {needCode ? "Подтвердить" : "Войти"}
           </Button>

@@ -1,19 +1,19 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Download, Table2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { CrusherReportCard, Legend, reportCsv } from "@/components/report-view";
+import { Segmented, type SegmentOption } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePoll } from "@/lib/api";
 import type { Period, Report } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
-const PERIODS: [Period, string][] = [
-  ["day", "День"],
-  ["week", "Неделя"],
-  ["month", "Месяц"],
+const PERIODS: SegmentOption<Period>[] = [
+  { value: "day", label: "День" },
+  { value: "week", label: "Неделя" },
+  { value: "month", label: "Месяц" },
 ];
 
 export default function ReportsPage() {
@@ -40,10 +40,11 @@ function title(report: Report): string {
 function Reports() {
   const params = useSearchParams();
   const router = useRouter();
-  const period = (PERIODS.some(([p]) => p === params.get("period")) ? params.get("period") : "day") as Period;
+  const period = (PERIODS.some((p) => p.value === params.get("period")) ? params.get("period") : "day") as Period;
   const date = params.get("date");
   const query = `/reports?period=${period}${date ? `&date=${date}` : ""}`;
   const { data: report, error } = usePoll<Report>(query, 60000);
+  const [table, setTable] = useState(false);
 
   const go = (next: { period?: Period; date?: string | null }) => {
     const p = new URLSearchParams({ period: next.period ?? period });
@@ -64,47 +65,36 @@ function Reports() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Отчёты</h1>
-          <p className="text-sm text-muted-foreground">Сколько дробилки работали, стояли и крутились без зерна</p>
-        </div>
-        <div role="radiogroup" aria-label="Период" className="flex rounded-lg border bg-background p-0.5">
-          {PERIODS.map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={period === value}
-              onClick={() => go({ period: value })}
-              className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors", period === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Отчёты</h1>
+        <Segmented label="Период" value={period} onChange={(value) => go({ period: value, date: null })} options={PERIODS} itemClassName="px-4" />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="icon" aria-label="Раньше" disabled={!report} onClick={() => report && go({ date: report.prev })}>
-          <ChevronLeft />
-        </Button>
-        <Button variant="outline" size="icon" aria-label="Позже" disabled={!report?.next} onClick={() => report?.next && go({ date: report.next })}>
-          <ChevronRight />
-        </Button>
-        <span className="min-w-0 text-lg font-medium first-letter:uppercase">{report ? title(report) : "…"}</span>
-        {date && (
-          <Button variant="ghost" size="sm" onClick={() => go({ date: null })}>
-            {period === "day" ? "Сегодня" : period === "week" ? "Эта неделя" : "Этот месяц"}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex w-full items-center gap-1 sm:w-auto">
+          <Button variant="ghost" size="icon" aria-label="Раньше" disabled={!report} onClick={() => report && go({ date: report.prev })}>
+            <ChevronLeft />
           </Button>
-        )}
+          <span className="min-w-0 text-lg font-medium first-letter:uppercase">{report ? title(report) : "…"}</span>
+          <Button variant="ghost" size="icon" aria-label="Позже" disabled={!report?.next} onClick={() => report?.next && go({ date: report.next })}>
+            <ChevronRight />
+          </Button>
+          {date && (
+            <Button variant="link" size="sm" onClick={() => go({ date: null })}>
+              {period === "day" ? "сегодня" : period === "week" ? "эта неделя" : "этот месяц"}
+            </Button>
+          )}
+        </div>
         <div className="flex-1" />
-        <Button variant="outline" size="sm" disabled={!report} onClick={download}>
-          <Download /> Скачать CSV
+        <Button variant="ghost" size="sm" onClick={() => setTable(!table)}>
+          {table ? <BarChart3 /> : <Table2 />} {table ? "График" : "Таблица"}
+        </Button>
+        <Button variant="ghost" size="sm" disabled={!report} onClick={download}>
+          <Download /> CSV
         </Button>
       </div>
 
-      <Legend />
+      {!table && <Legend />}
 
       {!report ? (
         error ? (
@@ -113,12 +103,9 @@ function Reports() {
           <Skeleton className="h-96 rounded-xl" />
         )
       ) : (
-        report.crushers.map((c) => <CrusherReportCard key={c.id} report={report} crusher={c} />)
+        report.crushers.map((c) => <CrusherReportCard key={c.id} report={report} crusher={c} table={table} />)
       )}
-      <p className="text-xs text-muted-foreground">
-        «Работала» — привод крутился (камера видит движение цепи), включая время без зерна. «Стояла» — привод неподвижен. «Нет данных» — сервер был выключен.
-        Время — по часам сервера.
-      </p>
+      <p className="text-xs text-muted-foreground">«Работала» — привод крутился, включая время без зерна. Время — по часам сервера.</p>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { percent } from "@/lib/format";
 import type { CrusherView, SeedZone, ZoneStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { LiveCanvas, type LiveState } from "./live-view";
+import { Segmented, type SegmentOption } from "./segmented";
 
 const COLORS = {
   covered: "#10b981",
@@ -78,31 +79,10 @@ export function useCameraMode(): [CameraMode, (mode: CameraMode) => void] {
   return [mode, set];
 }
 
-const MODES: [CameraMode, string, string, typeof Video][] = [
-  ["zones", "Зоны", "Кадр раз в секунду с зонами и уверенностью", ScanEye],
-  ["live", "Оригинал", "Видео с камеры как есть, без обработки", Video],
+const MODES: SegmentOption<CameraMode>[] = [
+  { value: "zones", label: "Зоны", hint: "Кадр раз в секунду с зонами и уверенностью", icon: ScanEye },
+  { value: "live", label: "Оригинал", hint: "Видео с камеры как есть, без обработки", icon: Video },
 ];
-
-function ModeSwitch({ mode, onChange }: { mode: CameraMode; onChange: (mode: CameraMode) => void }) {
-  return (
-    <div role="radiogroup" aria-label="Как смотреть камеру" className="absolute left-2 top-2 z-20 flex rounded-lg bg-black/55 p-0.5 text-xs font-medium text-white backdrop-blur-sm">
-      {MODES.map(([value, label, hint, Icon]) => (
-        <button
-          key={value}
-          type="button"
-          role="radio"
-          aria-checked={mode === value}
-          title={hint}
-          onClick={() => onChange(value)}
-          className={cn("flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors", mode === value ? "bg-white text-slate-900" : "hover:bg-white/15")}
-        >
-          <Icon className="size-3.5" />
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Камера дробилки: «Зоны» — кадр раз в секунду с зонами и состоянием (зоны вшиты в программу — здесь только
@@ -134,7 +114,7 @@ export function ZoneView({ crusher, tick, className, href }: { crusher: CrusherV
   return (
     <div className={cn("camera-frame relative aspect-video w-full overflow-hidden rounded-xl", className)}>
       {href && <Link href={href} className="absolute inset-0 z-10" aria-label={`${crusher.name}: подробнее`} />}
-      <ModeSwitch mode={mode} onChange={setMode} />
+      <Segmented label="Как смотреть камеру" tone="dark" value={mode} onChange={setMode} options={MODES} className="absolute left-2 top-2 z-20" />
       {!zonesMode ? (
         <>
           <LiveCanvas url={`/api/crushers/${crusher.id}/live.mjpg`} label={`Камера: ${crusher.name}, видео`} onState={(state, error) => setLive({ state, error })} />
