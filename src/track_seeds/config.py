@@ -411,6 +411,9 @@ class ServerSettings(_Base):
     admin_networks: Annotated[list[str], NoDecode] = LOCAL_NETWORKS
     # обратный прокси (Caddy, cloudflared) на этих адресах: адрес посетителя — из X-Forwarded-For
     trusted_proxies: Annotated[list[str], NoDecode] = LOOPBACK
+    # роутер, который сам держит HTTPS и пересылает на сервер посетителей из интернета (KeenDNS у
+    # Netcraze/Keenetic): всё, что с этих адресов, — из интернета, хоть роутер и в локальной сети
+    external_proxies: Annotated[list[str], NoDecode] = []
     # адрес сайта снаружи — для ссылок-приглашений и виджета: https://seeds.example.ru
     public_url: str = ""
     # собранный фронтенд (web/out); пусто — искать рядом с проектом
@@ -421,6 +424,7 @@ class ServerSettings(_Base):
     _allowed = _networks("WEB_ALLOWED_NETWORKS")
     _admin = _networks("WEB_ADMIN_NETWORKS")
     _proxies = _networks("WEB_TRUSTED_PROXIES")
+    _external = _networks("WEB_EXTERNAL_PROXIES")
 
     @field_validator("public_url")
     @classmethod

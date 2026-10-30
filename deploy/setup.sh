@@ -39,13 +39,30 @@ fi
 chmod 600 .env
 port=$(sed -n 's/^WEB_PORT=//p' .env); port=${port:-8080}
 
-# 2а. Домен: Caddy с сертификатом Let's Encrypt; сайт — для всех, но только через него (по HTTPS)
+# 2а. Домен — двумя способами (DOMAIN_VIA в .env; по умолчанию — по имени домена):
+#   caddy  — свой домен: A-запись на внешний IP, порты 80 и 443 проброшены на сервер, HTTPS держит Caddy здесь;
+#   router — KeenDNS роутера Netcraze/Keenetic (*.netcraze.link, *.keenetic.*): HTTPS держит роутер и через
+#            своё облако пересылает посетителей на порт сайта; роутер — «внешний прокси» (WEB_EXTERNAL_PROXIES):
+#            всё, что через него, — из интернета, панель разработчика оттуда закрыта.
 domain=$(sed -n 's/^DOMAIN=//p' .env | tr -d "[:space:]\"'")
+via=$(sed -n 's/^DOMAIN_VIA=//p' .env | tr -d "[:space:]\"'")
+stop_caddy() {
+    if grep -q '^COMPOSE_PROFILES=domain' .env; then
+        set_env COMPOSE_PROFILES ""
+        $DOCKER compose --profile domain rm -sf caddy >/dev/null 2>&1 || true
+        echo "✓ Caddy остановлен"
+    fi
+}
 if [ -n "$domain" ]; then
     case "$domain" in
         *://*|*/*|*:*) echo "✗ DOMAIN в .env — только имя, без https:// и пути: seeds.example.ru"; exit 1 ;;
     esac
-    set_env COMPOSE_PROFILES domain  # docker compose up поднимает и Caddy
+    if [ -z "$via" ]; then
+        case "$domain" in
+            *.netcraze.link|*.keenetic.link|*.keenetic.pro|*.keenetic.name|*.keenetic.io) via=router ;;
+            *) via=caddy ;;
+        esac
+    fi
     set_env WEB_PUBLIC_URL "https://$domain"
     allowed=$(sed -n 's/^WEB_ALLOWED_NETWORKS=//p' .env)
     if [ -z "$allowed" ]; then
@@ -53,11 +70,23 @@ if [ -n "$domain" ]; then
     elif [ "$allowed" != any ]; then
         echo "! WEB_ALLOWED_NETWORKS=$allowed — из интернета пустит только эти сети (для всех — any)"
     fi
-    echo "✓ Домен $domain: HTTPS через Caddy, панель разработчика — только из локальной сети"
-elif grep -q '^COMPOSE_PROFILES=domain' .env; then
-    set_env COMPOSE_PROFILES ""
-    $DOCKER compose --profile domain rm -sf caddy >/dev/null 2>&1 || true
-    echo "✓ DOMAIN убран из .env — Caddy остановлен (WEB_PUBLIC_URL и WEB_ALLOWED_NETWORKS поправьте сами)"
+    case "$via" in
+        caddy)
+            set_env COMPOSE_PROFILES domain  # docker compose up поднимает и Caddy
+            echo "✓ Домен $domain: HTTPS через Caddy, панель разработчика — только из локальной сети" ;;
+        router)
+            stop_caddy
+            router=$(sed -n 's/^WEB_EXTERNAL_PROXIES=//p' .env)
+            if [ -z "$router" ]; then
+                router=$(ip route show default 2>/dev/null | awk '{print $3; exit}')
+                [ -n "$router" ] || { echo "✗ Не нашёл адрес роутера — впишите в .env WEB_EXTERNAL_PROXIES=192.168.1.1"; exit 1; }
+                set_env WEB_EXTERNAL_PROXIES "$router"
+            fi
+            echo "✓ Домен $domain: через роутер $router (KeenDNS) — HTTPS держит роутер, всё через него — из интернета" ;;
+        *) echo "✗ DOMAIN_VIA в .env — caddy или router"; exit 1 ;;
+    esac
+else
+    stop_caddy
 fi
 
 # 3. Файрвол (если включён): порт веба — только для локальной сети; с доменом — 80 и 443 для всех
@@ -66,11 +95,11 @@ if command -v ufw >/dev/null && sudo ufw status | grep -q "Status: active"; then
         sudo ufw allow from "$net" to any port "$port" proto tcp >/dev/null
     done
     echo "✓ ufw: порт $port открыт только для локальной сети"
-    if [ -n "$domain" ]; then
+    if [ "$via" = caddy ]; then
         sudo ufw allow 80/tcp >/dev/null && sudo ufw allow 443/tcp >/dev/null && sudo ufw allow 443/udp >/dev/null
         echo "✓ ufw: 80 и 443 открыты (HTTPS и получение сертификата)"
     fi
-elif [ -n "$domain" ]; then
+elif [ "$via" = caddy ]; then
     echo "! ufw выключен. Сайт и так пускает из интернета только через HTTPS, но лучше закрыть лишнее:"
     echo "    sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443 && ./deploy/setup.sh && sudo ufw enable"
 fi
@@ -86,20 +115,23 @@ fi
 #    контейнер; перерыв — только на пересоздание (секунды), состояние дробилок продолжается (data/resume.json).
 # Caddy — в том же образе (из Debian): отдельно с Docker Hub ничего не скачивается.
 $DOCKER compose up -d --build
-if [ -n "$domain" ]; then
+if [ "$via" = caddy ]; then
     $DOCKER compose restart caddy >/dev/null  # Caddyfile подключён файлом: изменения — только после перезапуска
 fi
 
-# HTTPS проверяется здесь же, через Caddy на этом сервере: роутер может не пускать на свой внешний
-# адрес изнутри сети, а сертификат и прокси так проверяются честно.
+# HTTPS через Caddy проверяется здесь же (--resolve на этот сервер): роутер может не пускать на свой внешний
+# адрес изнутри сети, а сертификат и прокси так проверяются честно. Через роутер — по-настоящему, через облако.
 check_domain() {
     if ! command -v curl >/dev/null; then
         echo "  Сайт из интернета: https://$domain/  (проверить отсюда нечем: нет curl)"
         return
     fi
-    echo -n "  Жду HTTPS (первый раз Caddy получает сертификат)"
+    local resolve=(--resolve "$domain:443:127.0.0.1")
+    [ "$via" = router ] && resolve=()
+    echo -n "  Жду HTTPS"
+    [ "$via" = caddy ] && echo -n " (первый раз Caddy получает сертификат)"
     for _ in $(seq 45); do
-        if curl -fsS --max-time 5 --resolve "$domain:443:127.0.0.1" "https://$domain/api/health" >/dev/null 2>&1; then
+        if curl -fsS --max-time 5 "${resolve[@]}" "https://$domain/api/health" >/dev/null 2>&1; then
             echo
             echo "✓ Из интернета: https://$domain/  (клиенты и виджет)"
             echo "  Панель разработчика снаружи не открывается — из дома: ssh -L 8080:127.0.0.1:$port $(whoami)@сервер"
@@ -110,6 +142,13 @@ check_domain() {
         sleep 2
     done
     echo
+    if [ "$via" = router ]; then
+        echo "✗ https://$domain/ не отвечает (502 — роутер не достучался до сайта). В веб-интерфейсе роутера:"
+        echo "  «Сетевые правила» → «Доменное имя» → «Веб-доступ к устройствам домашней сети» → правило для"
+        echo "  ${domain%%.*}: устройство — этот сервер (${ip:-его IP}), порт $port, протокол HTTP (не HTTPS),"
+        echo "  доступ — без авторизации роутера (вход — на самом сайте). После правки — снова ./deploy/setup.sh"
+        return
+    fi
     echo "✗ HTTPS для $domain не заработал за 90 с. Проверьте:"
     echo "  • A-запись $domain указывает на внешний IP (сейчас: $(getent hosts "$domain" | awk '{print $1}' | head -1))"
     echo "  • на роутере порты 80 и 443 проброшены на этот сервер"

@@ -81,7 +81,7 @@ def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
         app = create_app(supervisor, static_dir, password, manage=True, allowed_networks=web.allowed_networks,
                          admin_networks=web.admin_networks, trusted_proxies=web.trusted_proxies,
                          open_networks=web.admin_networks if web.allow_no_password else LOOPBACK,
-                         public_url=web.public_url, accounts=accounts)
+                         public_url=web.public_url, accounts=accounts, external_proxies=web.external_proxies)
     except AuthError as e:
         sys.exit(f"WEB_PASSWORD в .env: {e}")
     log.info("Дробилки: %s; настройки на месте — %s", ", ".join(c.name for c in store.ordered()),
@@ -95,6 +95,9 @@ def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
         log.info("Сайт — из сетей: %s; панель разработчика — из: %s",
                  "любых" if "0.0.0.0/0" in web.allowed_networks else ", ".join(web.allowed_networks),
                  ", ".join(web.admin_networks))
+    if web.external_proxies:
+        log.info("Из интернета через роутер %s (%s): панель разработчика оттуда закрыта",
+                 ", ".join(web.external_proxies), web.public_url or "WEB_PUBLIC_URL не задан")
     uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False, timeout_graceful_shutdown=5,
                 proxy_headers=False)
     return 0

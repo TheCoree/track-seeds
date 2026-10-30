@@ -265,10 +265,16 @@ class _Security:
 
     Сайт открыт в интернет (any) — но напрямую на порт сервера пускают только из локальной сети:
     из интернета — через обратный прокси с HTTPS (Caddy), иначе пароль шёл бы открытым текстом,
-    если порт 8080 случайно окажется доступен снаружи."""
+    если порт 8080 случайно окажется доступен снаружи.
+
+    Внешний прокси (external_proxies) — роутер, который сам держит HTTPS и пересылает на сервер только
+    посетителей из интернета (KeenDNS у Netcraze/Keenetic). Он стоит в локальной сети, но всё, что
+    через него, — из интернета: панель разработчика и вход без пароля для таких запросов закрыты, что бы
+    ни было в X-Forwarded-For (адрес оттуда — только для журнала входов и защиты от перебора)."""
 
     def __init__(self, app, networks: list[str] | None = None, trusted_proxies: list[str] | None = None,
-                 admin_networks: list[str] | None = None, open_networks: list[str] | None = None) -> None:
+                 admin_networks: list[str] | None = None, open_networks: list[str] | None = None,
+                 external_proxies: list[str] | None = None) -> None:
         self._app = app
         self._networks = _networks(networks)
         if self._networks is not None and any(n.prefixlen == 0 for n in self._networks):
@@ -277,6 +283,21 @@ class _Security:
         self._admin = _networks(admin_networks)
         self._open = _networks(open_networks) or []
         self._local = _networks(LOCAL_NETWORKS)
+        self._external = _networks(external_proxies) or []
+
+    def _external_client(self, scope) -> str | None:
+        """Через внешний прокси: адрес посетителя для журнала (из X-Forwarded-For) или «интернет»;
+        None — запрос не через внешний прокси."""
+        peer = _address((scope.get("client") or ("",))[0])
+        if peer is None or not _within(peer, self._external):
+            return None
+        chain = [part.strip() for k, v in scope["headers"] if k == b"x-forwarded-for"
+                 for part in v.decode("latin-1").split(",")]
+        for item in reversed([c for c in chain if c]):
+            address = _address(item)
+            if address is not None and not _within(address, self._external + self._proxies):
+                return str(address)
+        return "интернет"
 
     def _client(self, scope) -> tuple[Address | None, bool, bool]:
         """Адрес посетителя, пришёл ли он по HTTPS и через обратный прокси."""
@@ -298,18 +319,26 @@ class _Security:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
-        address, https, proxied = self._client(scope)
-        if not _within(address, self._networks):
-            await self._reply(send, 403, "Доступ только из локальной сети")
-            return
-        if self._networks is None and not proxied and not _within(address, self._local):
-            await self._reply(send, 403, "Из интернета сайт открывается только по HTTPS-адресу")
-            return
         state = scope.setdefault("state", {})
-        state["ip"] = str(address) if address else ""
-        state["https"] = https
-        state["admin_network"] = _within(address, self._admin)
-        state["open_network"] = _within(address, self._open)
+        if (outside := self._external_client(scope)) is not None:
+            # из интернета через роутер: HTTPS держит он, панель разработчика и вход без пароля — нет
+            if self._networks is not None:
+                await self._reply(send, 403, "Доступ только из локальной сети")
+                return
+            https = True
+            state |= {"ip": outside, "https": True, "admin_network": False, "open_network": False}
+        else:
+            address, https, proxied = self._client(scope)
+            if not _within(address, self._networks):
+                await self._reply(send, 403, "Доступ только из локальной сети")
+                return
+            if self._networks is None and not proxied and not _within(address, self._local):
+                await self._reply(send, 403, "Из интернета сайт открывается только по HTTPS-адресу")
+                return
+            state["ip"] = str(address) if address else ""
+            state["https"] = https
+            state["admin_network"] = _within(address, self._admin)
+            state["open_network"] = _within(address, self._open)
         path, method = scope["path"], scope["method"]
         headers = dict(scope["headers"])
         if path.startswith("/api/") and method not in _SAFE_METHODS and headers.get(CSRF_HEADER.encode()) != b"1":
@@ -341,9 +370,10 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
                manage: bool = False, allowed_networks: list[str] | None = None, *,
                admin_networks: list[str] | None = None, trusted_proxies: list[str] | None = LOOPBACK,
                open_networks: list[str] | None = LOOPBACK, public_url: str = "",
-               accounts: AccountStore | None = None) -> FastAPI:
+               accounts: AccountStore | None = None, external_proxies: list[str] | None = None) -> FastAPI:
     """allowed_networks — откуда пускать на сайт, admin_networks — откуда работает панель разработчика
-    (None — откуда угодно), open_networks — откуда пускать без входа, пока разработчика не завели.
+    (None — откуда угодно), open_networks — откуда пускать без входа, пока разработчика не завели,
+    external_proxies — роутер, через который приходят только из интернета (KeenDNS).
     password — WEB_PASSWORD: начальный пароль разработчика admin.
     manage — запускать и останавливать Supervisor вместе с сервером. Остановка идёт в lifespan:
     uvicorn после SIGTERM заново посылает сигнал процессу, и код после uvicorn.run() не выполняется."""
@@ -1108,5 +1138,6 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
                     "<code>make web</code>.</p>")
 
     app.add_middleware(_Security, networks=allowed_networks, trusted_proxies=trusted_proxies,
-                       admin_networks=admin_networks, open_networks=open_networks)
+                       admin_networks=admin_networks, open_networks=open_networks,
+                       external_proxies=external_proxies)
     return app

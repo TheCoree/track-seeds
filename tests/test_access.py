@@ -377,3 +377,37 @@ def test_report_counts_work_stops_and_gaps(tmp_path):
     assert round(week["crushers"][0]["buckets"][4]["running"] / 60) == 100  # пятница
     assert report(log, [("d1", "Д")], "month", date(2026, 10, 1), now)["prev"] == "2026-09-01"
     log.close()
+
+
+def test_router_proxy_visitors_are_from_internet(tmp_path, video):  # noqa: F811 — фикстура из test_server
+    """KeenDNS: роутер (в локальной сети) пересылает посетителей из интернета на порт сервера. Они — из
+    интернета, что бы ни было в X-Forwarded-For: панели разработчика нет, вход только как клиент."""
+    store = new_store(tmp_path / "config", make_spec(tmp_path, str(video)))
+    sup = Supervisor(store, tmp_path / "data")
+    sup.start()
+    try:
+        app = create_app(sup, None, ADMIN_PW, allowed_networks=["0.0.0.0/0", "::/0"], admin_networks=LOCAL_NETWORKS,
+                         external_proxies=["192.168.1.1"])
+        router = TestClient(app, headers=CSRF, client=("192.168.1.1", 5000))
+        info = router.get("/api/auth/info").json()
+        assert not info["admin_here"] and not info["open_here"]
+        assert router.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW}).status_code == 401
+        spoofed = TestClient(app, headers=CSRF | {"X-Forwarded-For": "192.168.1.50, 127.0.0.1"}, client=("192.168.1.1", 1))
+        assert not spoofed.get("/api/auth/info").json()["admin_here"]
+        assert spoofed.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW}).status_code == 401
+        assert router.get("/api/health").headers["strict-transport-security"]  # HTTPS держит роутер
+        # клиент по приглашению входит; в журнале — адрес посетителя, а не роутера
+        admin = browser(app)
+        login(admin, "admin", ADMIN_PW)
+        phone = TestClient(app, headers=CSRF | {"X-Forwarded-For": "5.6.7.8"}, client=("192.168.1.1", 2),
+                           base_url="https://srv.example.ru")
+        register(phone, invite(admin))
+        assert phone.get("/api/overview").status_code == 200
+        # в локальной сети напрямую — по-прежнему своя сеть
+        assert browser(app).get("/api/auth/info").json()["admin_here"]
+        # сайт не открыт в интернет — через роутер не пускает вовсе
+        closed = create_app(sup, None, ADMIN_PW, external_proxies=["192.168.1.1"],
+                            allowed_networks=LOCAL_NETWORKS)
+        assert TestClient(closed, client=("192.168.1.1", 3)).get("/api/health").status_code == 403
+    finally:
+        sup.stop()
