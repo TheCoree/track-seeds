@@ -53,7 +53,11 @@ if [ -n "$domain" ]; then
     elif [ "$allowed" != any ]; then
         echo "! WEB_ALLOWED_NETWORKS=$allowed — из интернета пустит только эти сети (для всех — any)"
     fi
-    echo "✓ Домен $domain: HTTPS через Caddy, панель разработчика — только из локальной сети"
+    if [ "$(sed -n 's/^WEB_ADMIN_NETWORKS=//p' .env)" = any ]; then
+        echo "✓ Домен $domain: HTTPS через Caddy, панель разработчика — и из интернета (включите вход по коду)"
+    else
+        echo "✓ Домен $domain: HTTPS через Caddy, панель разработчика — только из локальной сети"
+    fi
 elif grep -q '^COMPOSE_PROFILES=domain' .env; then
     set_env COMPOSE_PROFILES ""
     $DOCKER compose --profile domain rm -sf caddy >/dev/null 2>&1 || true
@@ -101,9 +105,13 @@ check_domain() {
     for _ in $(seq 45); do
         if curl -fsS --max-time 5 --resolve "$domain:443:127.0.0.1" "https://$domain/api/health" >/dev/null 2>&1; then
             echo
-            echo "✓ Из интернета: https://$domain/  (клиенты и виджет)"
-            echo "  Панель разработчика снаружи не открывается — из дома: ssh -L 8080:127.0.0.1:$port $(whoami)@сервер"
-            echo "  и в браузере http://127.0.0.1:8080/"
+            if [ "$(sed -n 's/^WEB_ADMIN_NETWORKS=//p' .env)" = any ]; then
+                echo "✓ Из интернета: https://$domain/  (клиенты, виджет и панель разработчика)"
+            else
+                echo "✓ Из интернета: https://$domain/  (клиенты и виджет)"
+                echo "  Панель разработчика снаружи не открывается (из интернета — WEB_ADMIN_NETWORKS=any в .env);"
+                echo "  из дома без этого: ssh -L 8080:127.0.0.1:$port $(whoami)@сервер и в браузере http://127.0.0.1:8080/"
+            fi
             return
         fi
         echo -n "."
