@@ -4,26 +4,32 @@ import { BellRing, ChevronDown, Play, Save, SlidersHorizontal, Undo2 } from "luc
 import Link from "next/link";
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { crusherBody } from "@/lib/crusher";
 import type { Crusher, Meta, SeedsConfig, Speaker } from "@/lib/types";
 import { useAction } from "@/lib/use-action";
-import { SchemaForm, SwitchField } from "./schema-form";
+import { SchemaForm, SettingRow, SettingsList, SwitchRow } from "./schema-form";
+import { Segmented, type SegmentOption } from "./segmented";
 import { SpeakersEditor } from "./speakers-editor";
 import { useVoicePlayer, VoiceStatusLine } from "./voice";
 
 const PHRASES: [keyof SeedsConfig, string, string][] = [
-  ["say_empty", "Когда семена закончились", "Внимание! В дробилке нет зерна."],
-  ["say_refill", "Когда семена досыпали", "Семена досыпали, спасибо."],
-  ["say_unknown", "Когда камера не видит желоб", "Камера не видит желоб дробилки, проверьте камеру."],
-  ["say_stopped", "Когда дробилка остановилась", "Внимание! Дробилка остановилась."],
+  ["say_empty", "Семена закончились", "Внимание! В дробилке нет зерна."],
+  ["say_refill", "Семена досыпали", "Семена досыпали, спасибо."],
+  ["say_unknown", "Камера не видит желоб", "Камера не видит желоб дробилки, проверьте камеру."],
+  ["say_stopped", "Дробилка остановилась", "Внимание! Дробилка остановилась."],
+];
+
+const TIMES: SegmentOption<string>[] = [
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3" },
 ];
 
 /** Вкладка «Оповещения»: когда сообщать, что говорить, куда. */
@@ -35,7 +41,7 @@ export function AlertsForm({ crusher, meta, onSaved }: { crusher: Crusher; meta:
   const player = useVoicePlayer();
   const set = (patch: Partial<SeedsConfig>) => setSettings({ ...settings, ...patch });
   const hoursId = useId();
-  const timesId = useId();
+  const phraseId = useId();
 
   const strip = (s: SeedsConfig) => ({ ...s, zones: 0, samples: 0 });
   const dirty =
@@ -60,9 +66,9 @@ export function AlertsForm({ crusher, meta, onSaved }: { crusher: Crusher; meta:
     run("alarm", () => api.post(`/crushers/${crusher.id}/test-alarm`), "Проверочная тревога отправлена — смотрите телефон, динамики и журнал событий");
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-background/95 p-2 shadow-sm backdrop-blur">
-        <Button disabled={!dirty || busy === "save"} onClick={save}>
+        <Button variant={dirty ? "default" : "outline"} disabled={!dirty || busy === "save"} onClick={save}>
           {busy === "save" ? <Spinner /> : <Save />}
           {dirty ? "Сохранить изменения" : "Всё сохранено"}
         </Button>
@@ -78,65 +84,62 @@ export function AlertsForm({ crusher, meta, onSaved }: { crusher: Crusher; meta:
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Когда сообщать</CardTitle>
-            <CardDescription>Защита от ложных тревог: состояние должно держаться всё указанное время.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <SwitchField
-              checked={notify}
-              onChange={setNotify}
-              label="Уведомления на телефон (ntfy)"
-              hint="Сервер и канал — в «Уведомления и голос». Журнал событий пишется всегда."
-            />
+      <Card>
+        <CardHeader>
+          <CardTitle>Когда сообщать</CardTitle>
+          <CardDescription>Защита от ложных тревог: состояние должно держаться всё указанное время.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SettingsList>
+            <SwitchRow checked={notify} onChange={setNotify} label="Уведомления на телефон" hint="Канал ntfy — в «Уведомления и голос». Журнал событий пишется всегда." />
             <SchemaForm schema={meta?.schemas.seeds} value={settings} onChange={(v) => setSettings(v as SeedsConfig)} level="main" />
-          </CardContent>
-        </Card>
+          </SettingsList>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Что говорить</CardTitle>
-            <CardDescription>Свои фразы. Пустое поле — в этом случае молчать. «Прослушать» — в этом браузере.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>Что говорить</CardTitle>
+          <CardDescription>Пустая фраза — в этом случае молчать.</CardDescription>
+          <CardAction>
             <VoiceStatusLine />
-            {PHRASES.map(([key, label, example]) => {
-              const text = String(settings[key] ?? "");
-              return (
-                <Field key={key}>
-                  <FieldLabel>{label}</FieldLabel>
-                  <div className="flex gap-2">
-                    <Textarea rows={2} value={text} placeholder={`например: ${example}`} onChange={(e) => set({ [key]: e.target.value } as Partial<SeedsConfig>)} />
-                    <Button variant="outline" size="icon" className="shrink-0" aria-label="Прослушать" disabled={!text.trim() || player.playing !== null} onClick={() => player.play(text)}>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {PHRASES.map(([key, label, example]) => {
+            const text = String(settings[key] ?? "");
+            return (
+              <div key={key} className="flex flex-col gap-1.5">
+                <Label htmlFor={`${phraseId}-${key}`}>{label}</Label>
+                <InputGroup>
+                  <InputGroupInput id={`${phraseId}-${key}`} value={text} placeholder={example} onChange={(e) => set({ [key]: e.target.value } as Partial<SeedsConfig>)} />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      size="icon-xs"
+                      aria-label="Прослушать"
+                      title="Прослушать в браузере"
+                      aria-disabled={!text.trim() || player.playing !== null}
+                      className="aria-disabled:opacity-40"
+                      onClick={() => text.trim() && player.playing === null && player.play(text)}
+                    >
                       {player.playing === text.trim() ? <Spinner /> : <Play />}
-                    </Button>
-                  </div>
-                </Field>
-              );
-            })}
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor={timesId}>Сколько раз повторять</FieldLabel>
-                <NativeSelect id={timesId} className="w-full" value={String(settings.say_times)} onChange={(e) => set({ say_times: Number(e.target.value) })}>
-                  {[1, 2, 3].map((n) => (
-                    <NativeSelectOption key={n} value={String(n)}>
-                      {n}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={hoursId}>Часы голосовых оповещений</FieldLabel>
-                <Input id={hoursId} value={settings.voice_hours} placeholder="круглосуточно" onChange={(e) => set({ voice_hours: e.target.value })} />
-                <FieldDescription>Например 08:00-20:00</FieldDescription>
-              </Field>
-            </div>
-            <SwitchField checked={settings.say_reminders} onChange={(v) => set({ say_reminders: v })} label="Повторять при напоминаниях" hint="«Всё ещё пусто» тоже озвучивается" />
-          </CardContent>
-        </Card>
-      </div>
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
+              </div>
+            );
+          })}
+          <SettingsList className="mt-2 border-t pt-4">
+            <SettingRow label="Сколько раз повторять фразу">
+              <Segmented label="Сколько раз повторять" value={String(settings.say_times)} onChange={(v) => set({ say_times: Number(v) })} options={TIMES} />
+            </SettingRow>
+            <SettingRow label="Часы голосовых оповещений" hint="Например 08:00-20:00; пусто — круглосуточно" htmlFor={hoursId}>
+              <Input id={hoursId} value={settings.voice_hours} placeholder="круглосуточно" onChange={(e) => set({ voice_hours: e.target.value })} />
+            </SettingRow>
+            <SwitchRow checked={settings.say_reminders} onChange={(v) => set({ say_reminders: v })} label="Озвучивать напоминания" hint="«Всё ещё пусто» тоже говорится вслух" />
+          </SettingsList>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -166,7 +169,9 @@ export function AlertsForm({ crusher, meta, onSaved }: { crusher: Crusher; meta:
           </CardHeader>
           <CollapsibleContent>
             <CardContent className="pt-2">
-              <SchemaForm schema={meta?.schemas.seeds} value={settings} onChange={(v) => setSettings(v as SeedsConfig)} level="advanced" />
+              <SettingsList>
+                <SchemaForm schema={meta?.schemas.seeds} value={settings} onChange={(v) => setSettings(v as SeedsConfig)} level="advanced" />
+              </SettingsList>
             </CardContent>
           </CollapsibleContent>
         </Card>
