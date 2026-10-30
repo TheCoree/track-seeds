@@ -957,11 +957,17 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
 
     @viewer_api.get("/api/events")
     def events(camera_id: str | None = None, after: int | None = None, before: int | None = None,
-               type: list[str] | None = Query(None), limit: int = 100,
+               type: list[str] | None = Query(None), kind: list[str] | None = Query(None), limit: int = 100,
                who: Principal = Depends(viewer)) -> list[dict[str, Any]]:
+        """kind — виды событий (eventlog.KINDS): empty, stopped, started…; несколько — любой из них."""
         if who.admin:
-            return sup.events.query(camera_id, after, before, type, limit)
-        return [event_view(e) for e in sup.events.query(camera_id, after, before, type, limit, tests=False)]
+            return sup.events.query(camera_id, after, before, type, limit, kinds=kind)
+        return [event_view(e) for e in sup.events.query(camera_id, after, before, type, limit, tests=False, kinds=kind)]
+
+    @viewer_api.get("/api/events/kinds")
+    def event_kinds(camera_id: str | None = None, who: Principal = Depends(viewer)) -> dict[str, int]:
+        """Сколько событий каждого вида — числа на кнопках фильтра."""
+        return sup.events.counts(camera_id, tests=who.admin)
 
     @viewer_api.get("/api/files/{path:path}")
     def files(path: str) -> FileResponse:
@@ -1021,13 +1027,14 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
         return {"time": now, "crushers": items, "url": public_url}
 
     @widget_api.get("/api/widget/{crusher_id}.jpg")
-    def widget_image(crusher_id: str) -> Response:
+    def widget_image(crusher_id: str, w: int = Query(480, ge=160, le=960)) -> Response:
+        """Кадр для виджета; w — ширина в пикселях (виджет просит по размеру плитки: iPad — крупнее)."""
         crusher_or_404(crusher_id)
         worker = sup.worker(crusher_id)
         image = worker.raw_frame() if worker else None
         if image is None:
             raise HTTPException(503, "Нет кадра: камера не подключена")
-        return Response(_jpeg(image, 70, 480), media_type="image/jpeg", headers=_NO_CACHE)
+        return Response(_jpeg(image, 70, w), media_type="image/jpeg", headers=_NO_CACHE)
 
     # --- общие настройки ---
 

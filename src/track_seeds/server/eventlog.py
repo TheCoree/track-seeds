@@ -47,6 +47,31 @@ CREATE INDEX IF NOT EXISTS deliveries_event ON deliveries (event_uid);
 
 _SEVERITY = {"urgent": "alert", "high": "warning"}
 
+# Вид события — для фильтра в журнале: что случилось, а не каким классом записано
+KINDS = ("empty", "reminder", "low", "refill", "stopped", "started", "unknown", "offline", "online", "test", "other")
+
+
+def event_kind(type_name: str, data: dict) -> str:
+    """empty — закончились, reminder — «всё ещё пусто», low — заканчиваются, refill — семена есть (досыпали),
+    stopped / started — дробилка остановилась / запустилась, unknown — не видно желоб,
+    offline / online — связь с камерой, test — проверка оповещений."""
+    if data.get("test"):
+        return "test"
+    if type_name == "CameraOffline":
+        return "offline"
+    if type_name == "CameraOnline":
+        return "online"
+    if type_name != "SeedsLevelChanged":
+        return "other"
+    match data.get("level"):
+        case "empty":
+            return "reminder" if data.get("reminder") else "empty"
+        case "ok":
+            return "started" if data.get("previous") == "stopped" else "refill"
+        case "low" | "stopped" | "unknown" as level:
+            return level
+    return "other"
+
 
 class EventLog:
     """Подписчик шины: пишет каждое событие (и тихие тоже) со снимками в DATA_DIR/events/."""
@@ -62,7 +87,19 @@ class EventLog:
         self._db = sqlite3.connect(data_dir / "events.db", check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        self._migrate()
         self._last_prune = 0.0
+
+    def _migrate(self) -> None:
+        """Столбец kind (вид события) — у журналов, записанных до него, вычисляется из сохранённых данных."""
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(events)")}
+        if "kind" not in columns:
+            self._db.execute("ALTER TABLE events ADD COLUMN kind TEXT")
+        rows = self._db.execute("SELECT seq, type, data FROM events WHERE kind IS NULL").fetchall()
+        self._db.executemany("UPDATE events SET kind = ? WHERE seq = ?",
+                             [(event_kind(r["type"], json.loads(r["data"])), r["seq"]) for r in rows])
+        self._db.execute("CREATE INDEX IF NOT EXISTS events_kind ON events (kind, seq)")
+        self._db.commit()
 
     def attach(self, bus: EventBus) -> None:
         bus.subscribe(Event, self.record)
@@ -84,9 +121,10 @@ class EventLog:
         speech = self._speech(event) if self._speech else ""
         with self._lock:
             self._db.execute(
-                "INSERT OR IGNORE INTO events (uid, ts, camera_id, camera, type, severity, title, message, speech, "
-                "snapshot, frame, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (event.id, event.ts, event.camera_id, event.camera, type(event).__name__, severity, title, message,
+                "INSERT OR IGNORE INTO events (uid, ts, camera_id, camera, type, kind, severity, title, message, speech, "
+                "snapshot, frame, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event.id, event.ts, event.camera_id, event.camera, type(event).__name__,
+                 event_kind(type(event).__name__, data), severity, title, message,
                  speech or None, snapshot, frame, json.dumps(data, ensure_ascii=False, default=str)),
             )
             self._db.commit()
@@ -110,15 +148,16 @@ class EventLog:
         return str(path.relative_to(self._dir))
 
     def query(self, camera_id: str | None = None, after: int | None = None, before: int | None = None,
-              types: list[str] | None = None, limit: int = 100, tests: bool = True) -> list[dict]:
-        """tests=False — без проверок оповещений из веб-интерфейса (клиентам их не показываем)."""
+              types: list[str] | None = None, limit: int = 100, tests: bool = True,
+              kinds: list[str] | None = None) -> list[dict]:
+        """tests=False — без проверок оповещений из веб-интерфейса (клиентам их не показываем);
+        kinds — только эти виды событий (KINDS)."""
         sql = "SELECT * FROM events WHERE 1=1"
         params: list[object] = []
-        if not tests:
-            sql += " AND COALESCE(json_extract(data, '$.test'), 0) = 0"
-        if camera_id:
-            sql += " AND camera_id = ?"
-            params.append(camera_id)
+        sql, params = self._filter(sql, params, camera_id, tests)
+        if kinds:
+            sql += f" AND kind IN ({', '.join('?' * len(kinds))})"
+            params += kinds
         if after is not None:
             sql += " AND seq > ?"
             params.append(after)
@@ -145,6 +184,21 @@ class EventLog:
             row["data"] = json.loads(row["data"])
             row["deliveries"] = deliveries.get(row["uid"], [])
         return rows
+
+    @staticmethod
+    def _filter(sql: str, params: list[object], camera_id: str | None, tests: bool) -> tuple[str, list[object]]:
+        if not tests:
+            sql += " AND kind != 'test'"
+        if camera_id:
+            sql += " AND camera_id = ?"
+            params.append(camera_id)
+        return sql, params
+
+    def counts(self, camera_id: str | None = None, tests: bool = True) -> dict[str, int]:
+        """Сколько событий каждого вида в журнале (за срок хранения) — для фильтра."""
+        sql, params = self._filter("SELECT kind, COUNT(*) FROM events WHERE 1=1", [], camera_id, tests)
+        with self._lock:
+            return {kind: n for kind, n in self._db.execute(sql + " GROUP BY kind", params)}
 
     def get(self, uid: str) -> dict | None:
         with self._lock:

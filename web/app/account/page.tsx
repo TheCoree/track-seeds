@@ -72,7 +72,7 @@ export default function AccountPage() {
           <Row icon={KeyRound} title="Пароль" hint="Сменить пароль для входа" onClick={() => setPanel("password")} />
           <Row icon={ShieldCheck} title="Вход по коду" hint={me.totp ? "Включён" : "Выключен — код из приложения на телефоне вдобавок к паролю"} onClick={() => setPanel("totp")} />
           <Row icon={MonitorSmartphone} title="Устройства" hint={sessions ? `Вход выполнен на ${sessions.length} ${plural(sessions.length, "устройстве", "устройствах", "устройствах")}` : " "} onClick={() => setPanel("devices")} />
-          <Row icon={Smartphone} title="Виджет на iPhone" hint={widgets?.length ? `Добавлено: ${widgets.length}` : "Дробилки на экране «Домой» через Scriptable"} onClick={() => setPanel("widget")} />
+          <Row icon={Smartphone} title="Виджет на iPhone и iPad" hint={widgets?.length ? `Добавлено: ${widgets.length}` : "Дробилки на экране «Домой» iPhone и iPad через Scriptable"} onClick={() => setPanel("widget")} />
           {!installed && <Row icon={Download} title="Приложение на телефон" hint="Значок на экране «Домой»" onClick={() => setPanel("install")} />}
         </ItemGroup>
       </Card>
@@ -86,7 +86,7 @@ export default function AccountPage() {
       <Sheet open={panel === "devices"} onClose={close} title="Устройства" description="Незнакомое — выйдите на нём и смените пароль.">
         <Devices sessions={sessions} onChanged={reload} />
       </Sheet>
-      <Sheet open={panel === "widget"} onClose={close} title="Виджет на iPhone" description="Состояние дробилок и итоги дня на экране «Домой» и экране блокировки." wide>
+      <Sheet open={panel === "widget"} onClose={close} title="Виджет на iPhone и iPad" description="Состояние дробилок и итоги дня на экране «Домой» и экране блокировки." wide>
         <Widget me={me} keys={widgets} onChanged={reload} />
       </Sheet>
       <Sheet open={panel === "install"} onClose={close} title="Приложение на телефон" description="Открывается без адресной строки, как обычное приложение.">
