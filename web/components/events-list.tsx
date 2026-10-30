@@ -1,10 +1,11 @@
 "use client";
 
-import { CircleCheck, CircleX, Inbox, Volume2 } from "lucide-react";
+import { CircleCheck, CircleX, Inbox, MoreHorizontal, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { api, fileUrl } from "@/lib/api";
@@ -89,18 +90,25 @@ export function EventsList({ events, crushers, compact, canEdit }: { events: Eve
                     )}
                   </div>
                 )}
-                {canSample && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    Ошиблась? Сделать кадр эталоном:
-                    <Button variant="outline" size="xs" disabled={busy !== null} onClick={() => makeSample(e, "full")}>
-                      {busy === `${e.uid}-full` ? <Spinner /> : <CircleCheck />} семена есть
-                    </Button>
-                    <Button variant="outline" size="xs" disabled={busy !== null} onClick={() => makeSample(e, "empty")}>
-                      {busy === `${e.uid}-empty` ? <Spinner /> : <CircleX />} пусто
-                    </Button>
-                  </div>
-                )}
               </div>
+              {canSample && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="-mr-1 -mt-1 shrink-0" aria-label="Действия" disabled={busy !== null} />}>
+                    {busy?.startsWith(e.uid) ? <Spinner /> : <MoreHorizontal />}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Распознала неверно? Сделать кадр эталоном</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => makeSample(e, "full")}>
+                        <CircleCheck className="text-emerald-600" /> На кадре семена есть
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => makeSample(e, "empty")}>
+                        <CircleX className="text-red-600" /> На кадре пусто
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </li>
           );
         })}

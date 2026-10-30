@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { type ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { hhmm, hoursMinutes } from "@/lib/format";
 import type { CrusherReport, Period, Report, Totals, WorkState } from "@/lib/types";
@@ -54,58 +55,188 @@ function when(period: Period, ts: number): string {
 }
 
 /** Дробилка за период: три главных числа, одна строка подробностей, график (или таблица). */
-export function CrusherReportCard({ report, crusher, table }: { report: Report; crusher: CrusherReport; table: boolean }) {
-  const t = shownTotals(crusher.totals);
-  const observed = t.running + t.idle + t.stopped + t.offline;
-  const work = t.running + t.idle;
-  const details = [
-    t.idle >= 60 && `без зерна ${hoursMinutes(t.idle)}`,
-    t.offline + t.nodata >= 60 && `нет связи или данных ${hoursMinutes(t.offline + t.nodata)}`,
-    crusher.first_work && `первый запуск ${when(report.period, crusher.first_work)}`,
-    crusher.last_work && `последняя остановка ${when(report.period, crusher.last_work)}`,
-  ].filter(Boolean);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">{crusher.name}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-3 sm:grid-cols-3 sm:gap-4">
-            <Stat value={total(work)} label={observed ? `работала · ${Math.round((work / observed) * 100)} %` : "работала"} color="var(--state-running)" />
-            <Stat value={total(t.stopped)} label="стояла" color="var(--state-stopped)" />
-            <Stat value={String(crusher.stops)} label={plural(crusher.stops, "остановка", "остановки", "остановок")} />
-          </div>
-          {details.length > 0 && <div className="text-sm text-muted-foreground">{details.join(" · ")}</div>}
-          {!crusher.first_work && <div className="text-sm text-muted-foreground">За этот период не работала{observed === 0 ? " — данных нет" : ""}</div>}
-        </div>
-        {table ? <BucketTable report={report} crusher={crusher} /> : report.period === "day" ? <DayTimeline report={report} crusher={crusher} /> : <DaysChart report={report} crusher={crusher} />}
-      </CardContent>
-    </Card>
-  );
-}
-
 /** Итог за неделю или месяц — целыми часами: «335 ч» читается, «335 ч 5 мин» — нет. */
-function total(seconds: number): string {
+export function total(seconds: number): string {
   return seconds >= 86400 ? `${Math.round(seconds / 3600)} ч` : hoursMinutes(seconds);
 }
 
-function plural(n: number, one: string, few: string, many: string) {
+export function plural(n: number, one: string, few: string, many: string) {
   const d = n % 10;
   const h = n % 100;
   return d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many;
 }
 
-function Stat({ value, label, color }: { value: string; label: string; color?: string }) {
+function sum(crushers: CrusherReport[], pick: (t: ReturnType<typeof shownTotals>) => number, bucket?: number) {
+  return crushers.reduce((acc, c) => acc + pick(shownTotals(bucket === undefined ? c.totals : c.buckets[bucket])), 0);
+}
+
+/** Мини-график в плитке: столбик на час (день) или на день (неделя, месяц). */
+function Spark({ report, values, color }: { report: Report; values: number[]; color: string }) {
+  const max = Math.max(...values, 1);
   return (
-    <div className="min-w-0">
-      <div className="whitespace-nowrap text-xl font-semibold tabular-nums sm:text-3xl">{value}</div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground sm:text-sm">
-        {color && <span className="size-2 shrink-0 rounded-full sm:size-2.5" style={{ background: color }} />}
-        {label}
-      </div>
+    <div className="flex h-9 items-end gap-px" aria-hidden>
+      {values.map((v, i) => (
+        <div
+          key={i}
+          title={`${bucketLabel(report.period, report.edges[i])}: ${hoursMinutes(v)}`}
+          className="min-w-0 flex-1 rounded-t-[2px]"
+          style={{ height: report.edges[i] > report.now ? 2 : `${Math.max((v / max) * 100, v > 0 ? 8 : 4)}%`, background: report.edges[i] > report.now || v === 0 ? "var(--muted)" : color }}
+        />
+      ))}
     </div>
+  );
+}
+
+function Tile({ label, value, note, color, spark }: { label: string; value: string; note: string; color?: string; spark?: ReactNode }) {
+  return (
+    <Card size="sm" className="gap-2">
+      <CardHeader className="gap-0.5">
+        <CardDescription className="flex items-center gap-1.5">
+          {color && <span className="size-2.5 rounded-full" style={{ background: color }} />}
+          {label}
+        </CardDescription>
+        <div className="whitespace-nowrap text-xl font-semibold leading-tight tabular-nums sm:text-3xl">{value}</div>
+        <div className="text-xs text-muted-foreground">{note}</div>
+      </CardHeader>
+      {spark && <CardContent>{spark}</CardContent>}
+    </Card>
+  );
+}
+
+/** Сводка по обеим дробилкам. */
+export function SummaryTiles({ report }: { report: Report }) {
+  const cs = report.crushers;
+  const buckets = report.edges.slice(0, -1).map((_, i) => i);
+  const work = sum(cs, (t) => t.running + t.idle);
+  const stopped = sum(cs, (t) => t.stopped);
+  const idle = sum(cs, (t) => t.idle);
+  const observed = sum(cs, (t) => t.running + t.idle + t.stopped + t.offline);
+  const stops = cs.reduce((a, c) => a + c.stops, 0);
+  const runouts = cs.reduce((a, c) => a + c.runouts, 0);
+  const each = (f: (c: CrusherReport) => string) => cs.map((c) => `${c.name.replace("Дробилка ", "Д")}: ${f(c)}`).join(" · ");
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Tile
+        label="Работали"
+        color="var(--state-running)"
+        value={total(work)}
+        note={observed ? `${Math.round((work / observed) * 100)} % времени наблюдения` : "нет данных"}
+        spark={<Spark report={report} values={buckets.map((i) => sum(cs, (t) => t.running + t.idle, i))} color="var(--state-running)" />}
+      />
+      <Tile
+        label="Стояли"
+        color="var(--state-stopped)"
+        value={total(stopped)}
+        note={observed ? `${Math.round((stopped / observed) * 100)} % времени` : "нет данных"}
+        spark={<Spark report={report} values={buckets.map((i) => sum(cs, (t) => t.stopped, i))} color="var(--state-stopped)" />}
+      />
+      <Tile label="Остановок" value={String(stops)} note={each((c) => String(c.stops))} />
+      <Tile
+        label="Без зерна"
+        color="var(--state-idle)"
+        value={total(idle)}
+        note={runouts ? `${runouts} ${plural(runouts, "раз", "раза", "раз")} закончилось зерно` : "зерно не заканчивалось"}
+        spark={<Spark report={report} values={buckets.map((i) => sum(cs, (t) => t.idle, i))} color="var(--state-idle)" />}
+      />
+    </div>
+  );
+}
+
+/** Загрузка: доля времени каждой дробилки по состояниям — одной полосой. */
+export function Utilization({ report }: { report: Report }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Загрузка</CardTitle>
+        <CardDescription>Доля времени за период — на каждой дробилке</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {report.crushers.map((c) => {
+          const t = shownTotals(c.totals);
+          const all = t.running + t.idle + t.stopped + t.offline + t.nodata;
+          const parts = [...STATES.map((s) => ({ key: s.key, label: s.label, color: s.color, v: t[s.key] })), { key: "nodata", label: "нет данных", color: "transparent", v: t.nodata }];
+          const work = t.running + t.idle;
+          return (
+            <div key={c.id} className="grid grid-cols-[6.5rem_1fr_3.5rem] items-center gap-3 sm:grid-cols-[8rem_1fr_4rem]">
+              <span className="truncate text-sm font-medium">{c.name}</span>
+              <div className="flex h-4 overflow-hidden rounded-full border border-dashed border-muted-foreground/30">
+                {all > 0 &&
+                  parts.map((p) =>
+                    p.v > 0 ? <div key={p.key} title={`${p.label}: ${hoursMinutes(p.v)} (${Math.round((p.v / all) * 100)} %)`} className="h-full border-r-2 border-card last:border-r-0" style={{ width: `${(p.v / all) * 100}%`, background: p.color }} /> : null,
+                  )}
+              </div>
+              <span className="text-right text-lg font-semibold tabular-nums">{all ? Math.round((work / all) * 100) : 0} %</span>
+            </div>
+          );
+        })}
+        <Legend />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Дробилка: главные числа, график (или таблица), подробности. */
+export function CrusherReportCard({ report, crusher, table }: { report: Report; crusher: CrusherReport; table: boolean }) {
+  const t = shownTotals(crusher.totals);
+  const work = t.running + t.idle;
+  const details = [
+    crusher.first_work && `первый запуск ${when(report.period, crusher.first_work)}`,
+    crusher.last_work && `последняя остановка ${when(report.period, crusher.last_work)}`,
+    crusher.longest_work >= 60 && `дольше всего без остановки ${hoursMinutes(crusher.longest_work)}`,
+    t.offline + t.nodata >= 60 && `нет связи или данных ${hoursMinutes(t.offline + t.nodata)}`,
+  ].filter(Boolean);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{crusher.name}</CardTitle>
+        <CardDescription className="tabular-nums">
+          работала {total(work)} · стояла {total(t.stopped)} · {crusher.stops} {plural(crusher.stops, "остановка", "остановки", "остановок")}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {table ? <BucketTable report={report} crusher={crusher} /> : report.period === "day" ? <DayTimeline report={report} crusher={crusher} /> : <DaysChart report={report} crusher={crusher} />}
+        <div className="text-xs text-muted-foreground">{details.length ? details.join(" · ") : "За этот период не работала"}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Простои за день по обеим дробилкам — по времени. */
+export function StopsCard({ report }: { report: Report }) {
+  const rows = report.crushers.flatMap((c) => (c.stop_list ?? []).map(([s, e]) => ({ name: c.name, s, e }))).sort((a, b) => a.s - b.s);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Простои</CardTitle>
+        <CardDescription>Дробилка стояла дольше минуты</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Простоев не было</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Дробилка</TableHead>
+                <TableHead>Когда</TableHead>
+                <TableHead className="text-right">Сколько</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={`${r.name}-${r.s}`}>
+                  <TableCell>{r.name}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {hhmm(r.s)}–{report.now - r.e < 30 ? "сейчас" : hhmm(r.e)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{hoursMinutes(r.e - r.s)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -221,37 +352,35 @@ function DaysChart({ report, crusher }: { report: Report; crusher: CrusherReport
 
 function BucketTable({ report, crusher }: { report: Report; crusher: CrusherReport }) {
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-sm tabular-nums">
-        <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
-          <tr>
-            <th className="px-3 py-1.5 font-medium">{report.period === "day" ? "Час" : "День"}</th>
+    <div className="max-h-80 overflow-y-auto rounded-lg border">
+      <Table className="tabular-nums">
+        <TableHeader className="sticky top-0 bg-card">
+          <TableRow>
+            <TableHead>{report.period === "day" ? "Час" : "День"}</TableHead>
             {STATES.map((s) => (
-              <th key={s.key} className="px-3 py-1.5 text-right font-medium">
+              <TableHead key={s.key} className="text-right">
                 {s.label}
-              </th>
+              </TableHead>
             ))}
-            <th className="px-3 py-1.5 text-right font-medium">Нет данных</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y">
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {crusher.buckets.map((b, i) => {
             if (report.edges[i] > report.now) return null;
             const t = shownTotals(b);
             return (
-              <tr key={i}>
-                <td className="px-3 py-1">{bucketLabel(report.period, report.edges[i])}</td>
+              <TableRow key={i}>
+                <TableCell>{bucketLabel(report.period, report.edges[i])}</TableCell>
                 {STATES.map((s) => (
-                  <td key={s.key} className="px-3 py-1 text-right">
+                  <TableCell key={s.key} className="text-right">
                     {t[s.key] >= 60 ? hoursMinutes(t[s.key]) : "—"}
-                  </td>
+                  </TableCell>
                 ))}
-                <td className="px-3 py-1 text-right text-muted-foreground">{t.nodata >= 60 ? hoursMinutes(t.nodata) : "—"}</td>
-              </tr>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
