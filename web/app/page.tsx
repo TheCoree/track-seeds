@@ -72,7 +72,7 @@ function CrusherCard({ crusher, tick, now }: { crusher: CrusherView; tick: numbe
   const zones = crusher.status.seeds?.zones ?? [];
   return (
     <Card className="pt-0">
-      <div className="relative">
+      <div className="relative isolate">
         <ZoneView crusher={crusher} tick={tick} href={`/crusher?id=${crusher.id}`} className="rounded-none rounded-t-xl border-0" />
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <ConnectionBadge crusher={crusher} />

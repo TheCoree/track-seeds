@@ -151,6 +151,8 @@ async def _read_body(request: Request, limit: int) -> bytes:
 
 
 _NO_CACHE = {"Cache-Control": "no-store"}
+# Бесконечный поток (видео): прокси на nginx (облако роутера, хостинг) иначе копят его в буфере и не отдают кадры
+_STREAM = _NO_CACHE | {"X-Accel-Buffering": "no"}
 
 
 # --- запросы ---
@@ -783,7 +785,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
             finally:
                 live_viewers[0] -= 1
 
-        return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers=_NO_CACHE)
+        return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers=_STREAM)
 
     # --- дробилки: настройки (разработчик) ---
 
@@ -845,7 +847,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
             finally:
                 hub.close_stream()
 
-        return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers=_NO_CACHE)
+        return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers=_STREAM)
 
     @admin_api.post("/api/crushers/{crusher_id}/test-alarm")
     def test_alarm(crusher_id: str) -> dict[str, Any]:
