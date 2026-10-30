@@ -14,8 +14,17 @@ import { api, ApiError } from "@/lib/api";
 import type { AuthInfo } from "@/lib/types";
 
 /** Куда вернуть после входа: только свой путь, не чужой сайт. */
+/** Куда вернуться после входа — только на этот же сайт. Адрес разбирается так же, как его разберёт браузер:
+ *  «/\evil.ru» и «/<Tab>/evil.ru» он превращает в «//evil.ru» — проверка по первым символам их пропускала. */
 function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/";
+  if (!next || typeof window === "undefined") return "/";
+  try {
+    const url = new URL(next, window.location.origin);
+    if (url.origin !== window.location.origin || url.pathname.startsWith("/login")) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return "/";
+  }
 }
 
 export default function LoginPage() {

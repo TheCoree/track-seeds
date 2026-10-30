@@ -449,10 +449,13 @@ class AccountStore:
     # --- вход и сессии ---
 
     def login(self, username: str, password: str, code: str = "", ip: str = "", agent: str = "",
-              admin_allowed: bool = True) -> tuple[dict, str, str]:
-        """Проверить логин, пароль и код 2FA → (пользователь, id сессии, refresh-токен)."""
+              admin_allowed: bool = True, local: bool = False) -> tuple[dict, str, str]:
+        """Проверить логин, пароль и код 2FA → (пользователь, id сессии, refresh-токен).
+
+        local — вход из локальной сети: предел ошибок «на логин» его не закрывает. Иначе перебором с сотни
+        адресов из интернета можно было бы запереть вход разработчику и в офисе; свой адрес — свой предел."""
         login = username.strip().casefold()[:60]
-        if wait := self.throttle.retry_after(ip, login):
+        if wait := self.throttle.retry_after(ip, "" if local else login):
             raise AuthError(f"Слишком много неудачных попыток — повторите через {max(1, round(wait / 60))} мин", 429)
         row = self._row("SELECT * FROM users WHERE username = ?", (login,))
         if row is not None and row["role"] == "admin" and not admin_allowed:
