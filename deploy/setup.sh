@@ -84,9 +84,7 @@ fi
 
 # 5. Сборка и запуск (первая сборка на 2 ядрах — минут 10–15). Пока собирается, работает прежний
 #    контейнер; перерыв — только на пересоздание (секунды), состояние дробилок продолжается (data/resume.json).
-if [ -n "$domain" ]; then
-    $DOCKER compose pull -q caddy || echo "! Не удалось обновить образ Caddy — работаю с прежним"
-fi
+# Caddy — в том же образе (из Debian): отдельно с Docker Hub ничего не скачивается.
 $DOCKER compose up -d --build
 if [ -n "$domain" ]; then
     $DOCKER compose restart caddy >/dev/null  # Caddyfile подключён файлом: изменения — только после перезапуска

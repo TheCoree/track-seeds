@@ -17,11 +17,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # tzdata — время в уведомлениях по TZ; espeak-ng — запасной синтез речи;
-# alsa-utils (aplay) — физический динамик, подключённый к серверу.
+# alsa-utils (aplay) — физический динамик, подключённый к серверу;
+# caddy — HTTPS для доступа из интернета (сервис caddy в docker-compose.yml, если задан DOMAIN):
+# из Debian, а не образ с Docker Hub — Docker Hub с сервера бывает недоступен.
 # UID пользователя = UID владельца папки config/ на хосте, иначе не будет прав на запись.
 ARG UID=1000
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata espeak-ng alsa-utils \
+    && apt-get install -y --no-install-recommends tzdata espeak-ng alsa-utils caddy \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid ${UID} --create-home --home-dir /home/app --groups audio app
 
