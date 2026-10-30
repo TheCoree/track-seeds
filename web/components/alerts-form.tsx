@@ -67,7 +67,7 @@ export function AlertsForm({ crusher, meta, onSaved }: { crusher: Crusher; meta:
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-background/95 p-2 shadow-sm backdrop-blur">
+      <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-background/95 p-2 shadow-sm backdrop-blur">
         <Button variant={dirty ? "default" : "outline"} disabled={!dirty || busy === "save"} onClick={save}>
           {busy === "save" ? <Spinner /> : <Save />}
           {dirty ? "Сохранить изменения" : "Всё сохранено"}

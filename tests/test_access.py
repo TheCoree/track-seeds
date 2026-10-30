@@ -334,6 +334,7 @@ def test_live_stream_sends_camera_frames(site):
     wait_for(lambda: admin.get("/api/crushers/drobilka-1").json()["status"]["connected"])
     with admin.stream("GET", "/api/crushers/drobilka-1/live.mjpg") as response:
         assert response.headers["content-type"].startswith("multipart/x-mixed-replace")
+        assert response.headers["x-accel-buffering"] == "no"  # прокси на nginx не копят поток в буфере
         chunk = b""
         for part in response.iter_bytes():
             chunk += part

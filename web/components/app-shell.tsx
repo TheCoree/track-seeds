@@ -97,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 function PublicShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col bg-muted/40">
-      <header className="flex h-14 items-center justify-between px-4">
+      <header className="box-content flex h-14 items-center justify-between px-4 pt-[env(safe-area-inset-top)]">
         <span className="flex items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Wheat className="size-4" />
@@ -149,7 +149,9 @@ function Shell({ me, children }: { me: Me; children: ReactNode }) {
         <SidebarInset className="min-w-0 bg-muted/40">
           <TopBar />
           {overviewError && !overview && <div className="bg-destructive px-4 py-2 text-sm text-white">Нет связи с сервером: {overviewError}</div>}
-          <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</main>
+          <main className="mx-auto w-full max-w-7xl flex-1 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6 md:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            {children}
+          </main>
         </SidebarInset>
       </SidebarProvider>
       <EventWatcher />
@@ -198,7 +200,7 @@ function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      <SidebarHeader className="pt-[max(0.5rem,env(safe-area-inset-top))]">
         <Link href="/" onClick={close} className="flex items-center gap-2.5 px-2 py-1.5 group-data-[collapsible=icon]:px-0">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Wheat className="size-4" />
@@ -230,7 +232,7 @@ function AppSidebar() {
           </SidebarGroup>
         )}
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" tooltip="Мой аккаунт" isActive={pathname.startsWith("/account")} onClick={close} render={<Link href="/account" />}>
@@ -313,7 +315,9 @@ function TopBar() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-4",
+        // z-40 — над кадрами камер; box-content + отступ сверху — шапка под строкой состояния iPhone/iPad, а не за ней
+        "sticky top-0 z-40 box-content flex h-14 shrink-0 items-center gap-2 border-b pt-[env(safe-area-inset-top)]",
+        "pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:pl-4 md:pr-4",
         !worst && "bg-background/95 backdrop-blur",
         worst?.level === "empty" && "alarm-pulse border-transparent text-white",
         worst?.level === "low" && "border-transparent bg-amber-500 text-white",

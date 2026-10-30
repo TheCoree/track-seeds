@@ -54,27 +54,32 @@ export type CameraMode = "zones" | "live";
 const MODE_KEY = "track-seeds:camera-mode";
 const MODE_EVENT = "track-seeds-camera-mode";
 
-/** Как смотреть камеры: с зонами (по умолчанию) или живое видео — запоминается в этом браузере для всех камер. */
-export function useCameraMode(): [CameraMode, (mode: CameraMode) => void] {
+/** Как смотреть камеру дробилки: с зонами (по умолчанию) или живое видео — у каждой дробилки своё,
+ *  запоминается в этом браузере; карточка в «Обзоре» и страница той же дробилки показывают одно и то же. */
+export function useCameraMode(crusherId: string): [CameraMode, (mode: CameraMode) => void] {
   const [mode, setMode] = useState<CameraMode>("zones");
+  const key = `${MODE_KEY}:${crusherId}`;
   useEffect(() => {
     try {
-      setMode(localStorage.getItem(MODE_KEY) === "live" ? "live" : "zones");
+      setMode(localStorage.getItem(key) === "live" ? "live" : "zones");
     } catch {
       /* приватный режим */
     }
-    const listener = (e: Event) => setMode((e as CustomEvent<CameraMode>).detail);
+    const listener = (e: Event) => {
+      const { id, mode: next } = (e as CustomEvent<{ id: string; mode: CameraMode }>).detail;
+      if (id === crusherId) setMode(next);
+    };
     window.addEventListener(MODE_EVENT, listener);
     return () => window.removeEventListener(MODE_EVENT, listener);
-  }, []);
+  }, [key, crusherId]);
   const set = (value: CameraMode) => {
     setMode(value);
     try {
-      localStorage.setItem(MODE_KEY, value);
+      localStorage.setItem(key, value);
     } catch {
       /* ignore */
     }
-    window.dispatchEvent(new CustomEvent(MODE_EVENT, { detail: value }));
+    window.dispatchEvent(new CustomEvent(MODE_EVENT, { detail: { id: crusherId, mode: value } }));
   };
   return [mode, set];
 }
@@ -89,7 +94,7 @@ const MODES: SegmentOption<CameraMode>[] = [
  * показ), «Оригинал» — живое видео с камеры как есть. href — карточка ведёт на страницу дробилки.
  */
 export function ZoneView({ crusher, tick, className, href }: { crusher: CrusherView; tick: number; className?: string; href?: string }) {
-  const [mode, setMode] = useCameraMode();
+  const [mode, setMode] = useCameraMode(crusher.id);
   const [live, setLive] = useState<{ state: LiveState; error: string | null }>({ state: "connecting", error: null });
   const online = crusher.enabled && crusher.status.connected;
   const zonesMode = mode === "zones";
@@ -112,7 +117,7 @@ export function ZoneView({ crusher, tick, className, href }: { crusher: CrusherV
   }
 
   return (
-    <div className={cn("camera-frame relative aspect-video w-full overflow-hidden rounded-xl", className)}>
+    <div className={cn("camera-frame relative isolate aspect-video w-full overflow-hidden rounded-xl", className)}>
       {href && <Link href={href} className="absolute inset-0 z-10" aria-label={`${crusher.name}: подробнее`} />}
       <Segmented label="Как смотреть камеру" tone="dark" value={mode} onChange={setMode} options={MODES} className="absolute left-2 top-2 z-20" />
       {!zonesMode ? (
