@@ -393,3 +393,18 @@ def test_people_detector_runs_only_when_a_frame_could_change_something(tmp_path)
     for i in range(20):  # 10 с пустого желоба, проверка дважды в секунду
         a.process(Frame(image=with_drive(image, 100 + i, True), index=100 + i, ts=1_000_045 + i * 0.5))
     assert 8 <= people.calls <= 11
+
+
+def test_people_detector_rests_while_crusher_is_stopped(tmp_path):
+    """Дробилка стоит с пустым желобом (простой, обед) — детектор не работает: эти кадры в решение не идут."""
+    people = CountingPeople()
+    a = make_drive_analyzer(tmp_path, stopped_after_s=10)
+    a._detector = people
+    run_drive(a, 0, 15, 0.95, True)
+    run_drive(a, 15, 20, 0.0, False)
+    assert a.running is False
+    people.calls = 0
+    run_drive(a, 35, 60, 0.0, False)
+    assert people.calls == 0
+    run_drive(a, 95, 10, 0.0, True)  # запустили — пустой желоб снова проверяется
+    assert people.calls > 0

@@ -198,10 +198,11 @@ class SeedsAnalyzer:
 
     def _mask_people(self, image: np.ndarray, ts: float) -> None:
         """Зона, которую загородил человек, — «не определено». Проверяется, только если кадр может что-то
-        изменить: желоб «пусто» или привод не в своём состоянии. Семена есть и привод крутится — детектор не нужен."""
+        изменить: желоб «пусто» или привод не в своём состоянии. Семена есть и привод крутится — детектор не нужен;
+        дробилка стоит — кадры желоба в решение не идут, и пустой желоб в простое детектор не гоняет."""
         if self._detector is None:
             return
-        suspicious = [z for z in self._seeds if z.reading is Reading.UNCOVERED]
+        suspicious = [z for z in self._seeds if z.reading is Reading.UNCOVERED] if self.running is not False else []
         suspicious += [z for z in self._drives if z.reading is not Reading.UNKNOWN and z.reading is not z.debounce.stable]
         if not suspicious:
             return
