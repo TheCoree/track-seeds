@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { api, fileUrl } from "@/lib/api";
+import { EVENT_KINDS, KIND_ICON } from "@/lib/event-kinds";
 import { dateTime } from "@/lib/format";
 import type { CrusherView, EventRow, Label } from "@/lib/types";
 import { useAction } from "@/lib/use-action";
@@ -21,7 +22,19 @@ const SEVERITY = {
 };
 
 /** Список событий; для событий по семенам — «сделать кадр эталоном» (кадр без разметки сохранён). */
-export function EventsList({ events, crushers, compact, canEdit }: { events: EventRow[]; crushers?: CrusherView[]; compact?: boolean; canEdit?: boolean }) {
+export function EventsList({
+  events,
+  crushers,
+  compact,
+  canEdit,
+  emptyText = "Событий пока нет",
+}: {
+  events: EventRow[];
+  crushers?: CrusherView[];
+  compact?: boolean;
+  canEdit?: boolean;
+  emptyText?: string;
+}) {
   const [zoom, setZoom] = useState<string | null>(null);
   const { busy, run } = useAction();
 
@@ -43,7 +56,7 @@ export function EventsList({ events, crushers, compact, canEdit }: { events: Eve
           <EmptyMedia variant="icon">
             <Inbox />
           </EmptyMedia>
-          <EmptyTitle>Событий пока нет</EmptyTitle>
+          <EmptyTitle>{emptyText}</EmptyTitle>
         </EmptyHeader>
       </Empty>
     );
@@ -53,6 +66,7 @@ export function EventsList({ events, crushers, compact, canEdit }: { events: Eve
       <ul className="flex flex-col gap-2">
         {events.map((e) => {
           const crusher = crushers?.find((c) => c.id === e.camera_id);
+          const kind = EVENT_KINDS[e.kind] ?? EVENT_KINDS.other;
           const canSample = canEdit && !compact && e.frame && e.type === "SeedsLevelChanged" && crusher?.seeds.zones.some((z) => z.kind !== "motion");
           return (
             <li
@@ -70,7 +84,10 @@ export function EventsList({ events, crushers, compact, canEdit }: { events: Eve
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium">{e.title}</span>
+                  <span className="flex items-center gap-1.5 self-center font-medium">
+                    <kind.icon aria-label={kind.label} className={cn("size-4 shrink-0", KIND_ICON[kind.tone])} />
+                    {e.title}
+                  </span>
                   <span className="text-xs text-muted-foreground">{dateTime(e.ts)}</span>
                 </div>
                 <div className="whitespace-pre-line text-sm text-muted-foreground">{e.message}</div>

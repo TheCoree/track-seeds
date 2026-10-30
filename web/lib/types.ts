@@ -1,5 +1,7 @@
 // Типы ответов API (src/track_seeds/server/app.py)
 
+import type { EventKind } from "./event-kinds";
+
 export type Level = "ok" | "low" | "empty" | "unknown" | "stopped";
 export type ZoneKind = "empty" | "low" | "motion";
 export type Reading = "covered" | "uncovered" | "unknown";
@@ -133,6 +135,8 @@ export interface EventRow {
   camera_id: string;
   camera: string;
   type: string;
+  /** что случилось: empty, stopped, started… (lib/event-kinds) */
+  kind: EventKind;
   severity: "info" | "warning" | "alert";
   title: string;
   message: string;

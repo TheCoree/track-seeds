@@ -433,3 +433,35 @@ def test_only_local_network_is_let_in(tmp_path):
     with pytest.raises(ValueError, match="не сеть"):
         ServerSettings(_env_file=None, allowed_networks="192.168.1.0/24,интернет")
     assert ServerSettings(_env_file=None, allowed_networks="any").allowed_networks == ["0.0.0.0/0", "::/0"]
+
+
+def test_events_are_filtered_by_kind(tmp_path):
+    """Журнал: «закончились», «остановилась», «запустилась»… — фильтр и числа на кнопках; проверки — не клиентам."""
+    from track_seeds.events import CameraOffline
+    from track_seeds.server.eventlog import EventLog
+
+    log = EventLog(tmp_path / "log")
+    seeds = {"camera": "Дробилка 1", "camera_id": "drobilka-1", "duration_s": 60}
+    for level, previous, extra in [("empty", "ok", {}), ("empty", "empty", {"reminder": 1}), ("ok", "empty", {}),
+                                   ("stopped", "ok", {}), ("ok", "stopped", {}), ("unknown", "ok", {}),
+                                   ("low", "ok", {}), ("empty", "ok", {"test": True})]:
+        log.record(SeedsLevelChanged(level=level, previous=previous, **seeds, **extra))
+    log.record(CameraOffline(camera="Дробилка 2", camera_id="drobilka-2", since=0))
+    assert log.counts() == {"empty": 1, "reminder": 1, "refill": 1, "stopped": 1, "started": 1, "unknown": 1,
+                            "low": 1, "test": 1, "offline": 1}
+    assert "test" not in log.counts(tests=False) and log.counts("drobilka-2") == {"offline": 1}
+    rows = log.query(kinds=["stopped", "started"])
+    assert [(r["kind"], r["data"]["previous"]) for r in rows] == [("started", "stopped"), ("stopped", "ok")]
+    assert [r["kind"] for r in log.query(kinds=["empty"], tests=False)] == ["empty"]  # проверка того же вида — нет
+    log.close()
+
+    # API: клиенту — без проверок и с теми же фильтрами
+    client, sup = make_client(tmp_path)
+    try:
+        sup.events.record(SeedsLevelChanged(level="stopped", previous="ok", **seeds))
+        sup.events.record(SeedsLevelChanged(level="empty", previous="ok", test=True, **seeds))
+        assert client.get("/api/events/kinds").json() == {"stopped": 1, "test": 1}
+        assert [e["kind"] for e in client.get("/api/events", params={"kind": ["stopped", "test"]}).json()] == [
+            "test", "stopped"]
+    finally:
+        sup.stop()
