@@ -5,6 +5,10 @@ import { refreshSession, toLogin } from "@/lib/api";
 
 const CRLF2 = [13, 10, 13, 10];
 const STALL_MS = 8000;
+// Поток открылся, а кадра за столько нет — значит, прокси по дороге копит бесконечный ответ (облако роутера,
+// хостинг): дальше — кадры по одному (live.jpg), каждый ответ конечный и проходит через любой прокси.
+const FIRST_FRAME_MS = 5000;
+let streamBuffered = false; // уже выяснили на этой странице — сразу по кадру, без 5 с ожидания
 
 function indexOf(buffer: Uint8Array, pattern: number[]): number {
   outer: for (let i = 0; i <= buffer.length - pattern.length; i++) {
@@ -31,6 +35,7 @@ export type LiveState = "connecting" | "live" | "error";
 /**
  * MJPEG-поток камеры на canvas. Через fetch, а не <img>: видно ответ сервера — истёк токен (обновить и
  * переподключиться), слишком много зрителей, обрыв; кадры, которые не успели нарисовать, пропускаются.
+ * Поток не доходит (прокси копит его в буфере) — кадры по одному с того же сервера.
  */
 export function useMjpeg(url: string | null, canvas: RefObject<HTMLCanvasElement | null>) {
   const visible = useVisible();
@@ -44,6 +49,7 @@ export function useMjpeg(url: string | null, canvas: RefObject<HTMLCanvasElement
     let controller: AbortController | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    let firstFrameTimer: ReturnType<typeof setTimeout> | undefined;
     let delay = 1000;
     let pending: Uint8Array | null = null;
     let drawing = false;
@@ -85,16 +91,78 @@ export function useMjpeg(url: string | null, canvas: RefObject<HTMLCanvasElement
       retryTimer = setTimeout(connect, ms);
     };
 
+    const show = (jpeg: Uint8Array) => {
+      pending = jpeg;
+      delay = 1000;
+      resetStall();
+      setState("live");
+      setError(null);
+      draw();
+    };
+
+    // Кадры по одному: сервер отвечает кадром новее прошлого (или ждёт его до 3 с), темп — как у камеры
+    const frameUrl = url.replace(/live\.mjpg$/, "live.jpg");
+    const pollFrames = async () => {
+      let seq = 0;
+      let last = 0;
+      while (!stopped) {
+        // не чаще 12 кадров в секунду — как сам поток, даже если прокси выкинул номер кадра (X-Frame-Seq)
+        const wait = last + 80 - performance.now();
+        if (wait > 0) await new Promise((done) => (retryTimer = setTimeout(done, wait)));
+        last = performance.now();
+        controller = new AbortController();
+        resetStall();
+        try {
+          let res = await fetch(`${frameUrl}?after=${seq}`, { signal: controller.signal, cache: "no-store" });
+          if (res.status === 401) {
+            if (!(await refreshSession())) return toLogin();
+            res = await fetch(`${frameUrl}?after=${seq}`, { signal: controller.signal, cache: "no-store" });
+          }
+          if (res.status === 204) continue;
+          if (!res.ok) {
+            let message = `Ошибка ${res.status}`;
+            try {
+              message = (await res.json()).detail ?? message;
+            } catch {
+              /* не JSON */
+            }
+            setState("error");
+            setError(message);
+            await new Promise((done) => (retryTimer = setTimeout(done, 5000)));
+            continue;
+          }
+          seq = Number(res.headers.get("X-Frame-Seq")) || seq;
+          show(new Uint8Array(await res.arrayBuffer()));
+        } catch {
+          if (stopped) return;
+          setState("connecting");
+          await new Promise((done) => (retryTimer = setTimeout(done, delay)));
+          delay = Math.min(delay * 2, 10000);
+        }
+      }
+    };
+
     const connect = async () => {
+      if (streamBuffered) return pollFrames();
       controller = new AbortController();
       resetStall();
+      let gotFrame = false;
+      const firstFrame = (firstFrameTimer = setTimeout(() => {
+        if (gotFrame || stopped) return;
+        streamBuffered = true; // поток открылся, а кадров нет — прокси копит его; дальше по кадру
+        controller?.abort();
+      }, FIRST_FRAME_MS));
       try {
         let res = await fetch(url, { signal: controller.signal, cache: "no-store" });
         if (res.status === 401) {
-          if (!(await refreshSession())) return toLogin();
+          if (!(await refreshSession())) {
+            clearTimeout(firstFrame);
+            return toLogin();
+          }
           res = await fetch(url, { signal: controller.signal, cache: "no-store" });
         }
         if (!res.ok || !res.body) {
+          clearTimeout(firstFrame); // сервер ответил отказом — это не прокси, режим не меняем
           let message = `Ошибка ${res.status}`;
           try {
             message = (await res.json()).detail ?? message;
@@ -125,18 +193,16 @@ export function useMjpeg(url: string | null, canvas: RefObject<HTMLCanvasElement
               continue;
             }
             if (buffer.length < start + length) break;
-            pending = buffer.slice(start, start + length);
+            gotFrame = true;
+            show(buffer.slice(start, start + length));
             buffer = buffer.subarray(start + length);
-            delay = 1000;
-            resetStall();
-            setState("live");
-            setError(null);
-            draw();
           }
         }
       } catch {
         /* обрыв или зависание — переподключаемся */
       }
+      clearTimeout(firstFrame);
+      if (streamBuffered && !stopped) return pollFrames();
       if (!stopped) {
         setState("connecting");
         retry(delay);
@@ -148,6 +214,7 @@ export function useMjpeg(url: string | null, canvas: RefObject<HTMLCanvasElement
     return () => {
       stopped = true;
       clearTimeout(retryTimer);
+      clearTimeout(firstFrameTimer);
       clearTimeout(stallTimer);
       controller?.abort();
     };
