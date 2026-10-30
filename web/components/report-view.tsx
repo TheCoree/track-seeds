@@ -1,6 +1,5 @@
 "use client";
 
-import { CirclePause, Clock, Play, Square, WheatOff, WifiOff } from "lucide-react";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,7 +35,7 @@ export function Legend() {
       ))}
       <span className="flex items-center gap-1.5">
         <span className="size-3 rounded-sm border border-dashed border-muted-foreground/50" />
-        нет данных (сервер выключен)
+        нет данных
       </span>
     </div>
   );
@@ -50,12 +49,21 @@ export function bucketLabel(period: Period, start: number, short = false): strin
   return short ? String(d.getDate()) : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", weekday: "short" });
 }
 
-export function CrusherReportCard({ report, crusher }: { report: Report; crusher: CrusherReport }) {
-  const [table, setTable] = useState(false);
+function when(period: Period, ts: number): string {
+  return period === "day" ? hhmm(ts) : new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Дробилка за период: три главных числа, одна строка подробностей, график (или таблица). */
+export function CrusherReportCard({ report, crusher, table }: { report: Report; crusher: CrusherReport; table: boolean }) {
   const t = shownTotals(crusher.totals);
   const observed = t.running + t.idle + t.stopped + t.offline;
   const work = t.running + t.idle;
-  const share = (v: number) => (observed > 0 ? `${Math.round((v / observed) * 100)} %` : "");
+  const details = [
+    t.idle >= 60 && `без зерна ${hoursMinutes(t.idle)}`,
+    t.offline + t.nodata >= 60 && `нет связи или данных ${hoursMinutes(t.offline + t.nodata)}`,
+    crusher.first_work && `первый запуск ${when(report.period, crusher.first_work)}`,
+    crusher.last_work && `последняя остановка ${when(report.period, crusher.last_work)}`,
+  ].filter(Boolean);
 
   return (
     <Card>
@@ -63,60 +71,40 @@ export function CrusherReportCard({ report, crusher }: { report: Report; crusher
         <CardTitle className="text-lg">{crusher.name}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile icon={Play} color="var(--state-running)" label="Работала" value={hoursMinutes(work)} note={[share(work), t.idle >= 60 ? `из них без зерна ${hoursMinutes(t.idle)}` : ""].filter(Boolean).join(" · ")} />
-          <Tile icon={CirclePause} color="var(--state-stopped)" label="Стояла" value={hoursMinutes(t.stopped)} note={[share(t.stopped), `остановок: ${crusher.stops}`].filter(Boolean).join(" · ")} />
-          <Tile icon={WheatOff} color="var(--state-idle)" label="Крутилась без зерна" value={hoursMinutes(t.idle)} note={crusher.runouts ? `раз: ${crusher.runouts}` : t.idle < 60 ? "ни разу" : "короткими отрезками"} />
-          <Tile
-            icon={WifiOff}
-            color="var(--state-offline)"
-            label="Нет связи / данных"
-            value={hoursMinutes(t.offline + t.nodata)}
-            note={t.nodata >= 60 ? `сервер не работал ${hoursMinutes(t.nodata)}` : t.offline >= 60 ? "камера не отвечала" : "без перерывов"}
-          />
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-3 sm:grid-cols-3 sm:gap-4">
+            <Stat value={total(work)} label={observed ? `работала · ${Math.round((work / observed) * 100)} %` : "работала"} color="var(--state-running)" />
+            <Stat value={total(t.stopped)} label="стояла" color="var(--state-stopped)" />
+            <Stat value={String(crusher.stops)} label={plural(crusher.stops, "остановка", "остановки", "остановок")} />
+          </div>
+          {details.length > 0 && <div className="text-sm text-muted-foreground">{details.join(" · ")}</div>}
+          {!crusher.first_work && <div className="text-sm text-muted-foreground">За этот период не работала{observed === 0 ? " — данных нет" : ""}</div>}
         </div>
-
-        <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
-          {crusher.first_work && (
-            <span className="flex items-center gap-1.5">
-              <Play className="size-3.5" /> первый запуск {report.period === "day" ? hhmm(crusher.first_work) : new Date(crusher.first_work * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          {crusher.last_work && (
-            <span className="flex items-center gap-1.5">
-              <Square className="size-3.5" /> последняя остановка {report.period === "day" ? hhmm(crusher.last_work) : new Date(crusher.last_work * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          {crusher.longest_work >= 60 && (
-            <span className="flex items-center gap-1.5">
-              <Clock className="size-3.5" /> дольше всего без остановки {hoursMinutes(crusher.longest_work)}
-            </span>
-          )}
-          {!crusher.first_work && <span>За этот период дробилка не работала{observed === 0 ? " — данных нет" : ""}</span>}
-        </div>
-
-        {report.period === "day" ? <DayTimeline report={report} crusher={crusher} /> : <DaysChart report={report} crusher={crusher} />}
-
-        {report.period === "day" && (crusher.stop_list?.length ?? 0) > 0 && <StopList crusher={crusher} />}
-
-        <button type="button" className="self-start text-sm text-muted-foreground underline underline-offset-2" onClick={() => setTable(!table)}>
-          {table ? "Скрыть таблицу" : "Показать таблицей"}
-        </button>
-        {table && <BucketTable report={report} crusher={crusher} />}
+        {table ? <BucketTable report={report} crusher={crusher} /> : report.period === "day" ? <DayTimeline report={report} crusher={crusher} /> : <DaysChart report={report} crusher={crusher} />}
       </CardContent>
     </Card>
   );
 }
 
-function Tile({ icon: Icon, color, label, value, note }: { icon: typeof Play; color: string; label: string; value: string; note: string }) {
+/** Итог за неделю или месяц — целыми часами: «335 ч» читается, «335 ч 5 мин» — нет. */
+function total(seconds: number): string {
+  return seconds >= 86400 ? `${Math.round(seconds / 3600)} ч` : hoursMinutes(seconds);
+}
+
+function plural(n: number, one: string, few: string, many: string) {
+  const d = n % 10;
+  const h = n % 100;
+  return d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many;
+}
+
+function Stat({ value, label, color }: { value: string; label: string; color?: string }) {
   return (
-    <div className="rounded-lg border p-3">
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Icon className="size-4" style={{ color }} />
+    <div className="min-w-0">
+      <div className="whitespace-nowrap text-xl font-semibold tabular-nums sm:text-3xl">{value}</div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground sm:text-sm">
+        {color && <span className="size-2 shrink-0 rounded-full sm:size-2.5" style={{ background: color }} />}
         {label}
       </div>
-      <div className="mt-1 text-xl font-semibold tabular-nums sm:text-2xl">{value}</div>
-      {note && <div className="mt-0.5 text-xs text-muted-foreground">{note}</div>}
     </div>
   );
 }
@@ -163,23 +151,12 @@ function DayTimeline({ report, crusher }: { report: Report; crusher: CrusherRepo
       </div>
       <div className="relative h-4 text-[11px] tabular-nums text-muted-foreground">
         {[0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => (
-          <span key={h} className={cn("absolute -translate-x-1/2", h === 0 && "translate-x-0", h === 24 && "-translate-x-full")} style={{ left: `${(h / 24) * 100}%` }}>
+          <span
+            key={h}
+            className={cn("absolute -translate-x-1/2", h === 0 && "translate-x-0", h === 24 && "-translate-x-full", h % 6 !== 0 && "hidden sm:block")}
+            style={{ left: `${(h / 24) * 100}%` }}
+          >
             {String(h).padStart(2, "0")}:00
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StopList({ crusher }: { crusher: CrusherReport }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="text-sm font-medium">Простои</div>
-      <div className="flex flex-wrap gap-1.5">
-        {crusher.stop_list?.map(([s, e]) => (
-          <span key={s} className="rounded-md border px-2 py-0.5 text-xs tabular-nums">
-            {hhmm(s)}–{hhmm(e)} · {hoursMinutes(e - s)}
           </span>
         ))}
       </div>
