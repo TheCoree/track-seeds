@@ -289,7 +289,7 @@ def test_password_protects_everything(tmp_path):
         assert all("HttpOnly" in c and "SameSite=strict" in c for c in cookies)
         assert any(c.startswith("ts_refresh=") and "Path=/api/auth" in c for c in cookies)
         assert client.get("/api/meta").status_code == 200
-        health = TestClient(client.app, client=("8.8.8.8", 1)).get("/api/health")  # для HEALTHCHECK — без входа
+        health = TestClient(client.app, client=("192.168.1.9", 1)).get("/api/health")  # для HEALTHCHECK — без входа
         assert health.status_code == 200 and health.json()["ok"]
         client.post("/api/auth/logout").raise_for_status()
         assert client.get("/api/meta").status_code == 401
@@ -353,7 +353,7 @@ def test_masking_and_merge_semantics():
 def test_lifespan_starts_and_stops_everything(tmp_path):
     store = new_store(tmp_path / "config")
     sup = Supervisor(store, tmp_path / "data")
-    with TestClient(create_app(sup, None, None, manage=True)) as client:
+    with TestClient(create_app(sup, None, None, manage=True), client=LOCAL) as client:
         assert client.get("/api/health").json()["event_bus"]
     assert not sup.bus.alive and not sup.announcer.alive
 
@@ -465,3 +465,29 @@ def test_events_are_filtered_by_kind(tmp_path):
             "test", "stopped"]
     finally:
         sup.stop()
+
+
+def test_crusher_state_survives_server_restart(tmp_path):
+    """Обновление прода: состояние дробилок пишется в data/resume.json и отдаётся воркерам при запуске."""
+    from track_seeds.server.resume import ResumeFile
+    from track_seeds.server.workers import CameraWorker
+
+    data = tmp_path / "data"
+    state = {"ts": 1_000_000.0, "level": "ok", "level_since": 990_000.0, "running": True, "zones": {}}
+    ResumeFile(data).save({"drobilka-1": state})
+    assert ResumeFile(data).load() == {"drobilka-1": state}
+
+    store = new_store(tmp_path / "config", make_spec(tmp_path, "rtsp://10.0.0.8/102", username="admin"))
+    sup = Supervisor(store, data)
+    sup._resumed = ResumeFile(data).load()
+    sup._start_worker(store.crusher("drobilka-1"))  # без пароля камеры — не подключается, но состояние при нём
+    worker = sup.worker("drobilka-1")
+    assert worker.snapshot() == state
+    worker.stop()
+    assert worker.snapshot() == state  # остановка без кадров не стирает сохранённое
+    sup.resume.save(sup._snapshots())
+    assert ResumeFile(data).load() == {"drobilka-1": state}
+
+    (data / "resume.json").write_text("{испорчен", encoding="utf-8")
+    assert ResumeFile(data).load() == {}  # испорченный файл — начинаем заново, сервер запускается
+    assert CameraWorker(store.crusher("drobilka-1"), store.settings, store, None).snapshot() is None  # type: ignore[arg-type]

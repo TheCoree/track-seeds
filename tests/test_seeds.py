@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import cv2
@@ -480,3 +481,63 @@ def test_builtin_walls_do_not_overlap_seed_zones():
                 area, _ = cv2.intersectConvexConvex(quad, np.float32(order_quad(guard)))
                 assert area == 0, (spec.id, zone.id, guard)
         assert any(z.guards for z in spec.zones if z.kind == "empty"), spec.id
+
+
+# --- состояние между перезапусками сервера ---
+
+def restarted(tmp_path: Path, old: SeedsAnalyzer, gap_s: float) -> SeedsAnalyzer:
+    """Новый анализатор (сервер обновили), продолжает с состояния старого через gap_s секунд."""
+    new = SeedsAnalyzer(old._settings, "Дробилка", tmp_path)
+    snapshot = old.snapshot()
+    assert snapshot is not None and json.loads(json.dumps(snapshot)) == snapshot  # переживает запись в файл
+    new.restore(snapshot, snapshot["ts"] + gap_s)
+    return new
+
+
+def test_restart_keeps_how_long_seeds_have_been_there(tmp_path):
+    a = make_drive_analyzer(tmp_path)
+    run_drive(a, 0, 7200, 0.95, True)  # 2 часа с семенами
+    since, running_since = a.level_since, a.running_since
+    b = restarted(tmp_path, a, gap_s=40)
+    assert b.level == "ok" and b.level_since == since and b.running_since == running_since
+    assert run_drive(b, 7240, 30, 0.95, True) == []  # не «семена есть» заново
+    status = b.status()
+    assert status["level_since"] == since and status["running"] is True
+    assert {z["id"]: z["state"] for z in status["zones"]} == {"b": "covered", "m": "covered", "d": "covered"}
+
+
+def test_restart_reports_what_changed_during_the_pause(tmp_path):
+    a = make_drive_analyzer(tmp_path)
+    run_drive(a, 0, 60, 0.95, True)
+    b = restarted(tmp_path, a, gap_s=60)
+    events = run_drive(b, 120, 60, 0.0, True)  # пока обновлялись, семена кончились
+    assert [(e.level, e.previous, e.quiet) for e in events] == [("empty", "ok", False)]
+
+
+def test_restart_does_not_repeat_alarm_and_keeps_reminders(tmp_path):
+    a = make_drive_analyzer(tmp_path, remind_every_s=300)
+    run_drive(a, 0, 15, 0.95, True)
+    assert [e.level for e in run_drive(a, 15, 200, 0.0, True)] == ["empty"]
+    b = restarted(tmp_path, a, gap_s=30)
+    events = run_drive(b, 245, 200, 0.0, True)
+    assert [(e.level, e.reminder) for e in events] == [("empty", 1)]  # напоминание по прежнему расписанию
+    assert 300 <= events[0].ts - a._last_alert <= 302
+
+
+def test_long_pause_starts_from_scratch(tmp_path):
+    from track_seeds.analyzers.seeds import RESUME_MAX_GAP_S
+
+    a = make_drive_analyzer(tmp_path)
+    run_drive(a, 0, 60, 0.95, True)
+    b = restarted(tmp_path, a, gap_s=RESUME_MAX_GAP_S + 1)
+    assert b.level is None and b.running is None
+    assert [(e.level, e.quiet) for e in run_drive(b, 2000, 30, 0.95, True)] == [("ok", True)]
+
+
+def test_restore_ignores_garbage(tmp_path):
+    a = make_drive_analyzer(tmp_path)
+    assert a.snapshot() is None  # кадров не было — нечего сохранять
+    assert not a.restore({"ts": "вчера"}, 1_000_000)
+    assert a.restore({"ts": 1_000_000, "level": "взорвалась", "zones": {"b": {"state": "covered"}, "d": 5}},
+                     1_000_010)
+    assert a.level is None and a.status()["zones"][0]["state"] is None  # зона без «drive» — не та зона
