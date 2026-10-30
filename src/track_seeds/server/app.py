@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from ..camera import mask_url, probe_camera
 from ..config import (
+    LOCAL_NETWORKS,
     LOOPBACK,
     CameraConfig,
     NotifyConfig,
@@ -260,7 +261,11 @@ def _within(address: Address | None, networks: list[Network] | None) -> bool:
 
 class _Security:
     """Адрес посетителя (за обратным прокси — из X-Forwarded-For), только из разрешённых сетей,
-    защита от CSRF, защитные заголовки. Кто именно пришёл, решают зависимости маршрутов."""
+    защита от CSRF, защитные заголовки. Кто именно пришёл, решают зависимости маршрутов.
+
+    Сайт открыт в интернет (any) — но напрямую на порт сервера пускают только из локальной сети:
+    из интернета — через обратный прокси с HTTPS (Caddy), иначе пароль шёл бы открытым текстом,
+    если порт 8080 случайно окажется доступен снаружи."""
 
     def __init__(self, app, networks: list[str] | None = None, trusted_proxies: list[str] | None = None,
                  admin_networks: list[str] | None = None, open_networks: list[str] | None = None) -> None:
@@ -271,13 +276,14 @@ class _Security:
         self._proxies = _networks(trusted_proxies) or []
         self._admin = _networks(admin_networks)
         self._open = _networks(open_networks) or []
+        self._local = _networks(LOCAL_NETWORKS)
 
-    def _client(self, scope) -> tuple[Address | None, bool]:
-        """Адрес посетителя и пришёл ли он по HTTPS."""
+    def _client(self, scope) -> tuple[Address | None, bool, bool]:
+        """Адрес посетителя, пришёл ли он по HTTPS и через обратный прокси."""
         peer = _address((scope.get("client") or ("",))[0])
         https = scope.get("scheme") == "https"
         if peer is None or not _within(peer, self._proxies):
-            return peer, https
+            return peer, https, False
         headers = scope["headers"]
         chain = [part.strip() for k, v in headers if k == b"x-forwarded-for" for part in v.decode("latin-1").split(",")]
         address = peer
@@ -286,15 +292,18 @@ class _Security:
             if address is None or not _within(address, self._proxies):
                 break
         proto = next((v.decode("latin-1") for k, v in headers if k == b"x-forwarded-proto"), "")
-        return address, https or proto.split(",")[0].strip().lower() == "https"
+        return address, https or proto.split(",")[0].strip().lower() == "https", bool(chain)
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
-        address, https = self._client(scope)
+        address, https, proxied = self._client(scope)
         if not _within(address, self._networks):
             await self._reply(send, 403, "Доступ только из локальной сети")
+            return
+        if self._networks is None and not proxied and not _within(address, self._local):
+            await self._reply(send, 403, "Из интернета сайт открывается только по HTTPS-адресу")
             return
         state = scope.setdefault("state", {})
         state["ip"] = str(address) if address else ""

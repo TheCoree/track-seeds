@@ -59,6 +59,10 @@ class ZoneDebounce:
         self._started = old._started
         self.stable, self.stable_since, self.last_known = old.stable, old.stable_since, old.last_known
 
+    def restore(self, stable: Reading, since: float | None) -> None:
+        """Состояние до перезапуска сервера: держится, пока кадры не подтвердят другое (как обычно, за окно)."""
+        self.stable, self.stable_since = stable, since
+
     def blind_for(self, ts: float) -> float:
         """Сколько секунд подряд зону не удаётся определить."""
         since = self.last_known if self.last_known is not None else self._started

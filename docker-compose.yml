@@ -33,5 +33,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # HTTPS из интернета: запускается, только если в .env задан DOMAIN (deploy/setup.sh пишет
+  # COMPOSE_PROFILES=domain — тогда и «docker compose up -d» поднимает Caddy вместе с сайтом).
+  caddy:
+    image: caddy:2
+    profiles: [domain]
+    restart: always
+    # Сеть хоста обязательна: Caddy ходит на 127.0.0.1:8080, и сайт берёт адрес посетителя из
+    # X-Forwarded-For. В отдельной docker-сети все посетители пришли бы с 172.x — сайт счёл бы их
+    # локальной сетью и показал бы им панель разработчика.
+    network_mode: host
+    environment:  # только это, не весь .env: Caddy не нужны пароли
+      DOMAIN: ${DOMAIN:-}
+      WEB_PORT: ${WEB_PORT:-8080}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data  # сертификаты: при обновлении не теряются (Let's Encrypt ограничивает выпуск)
+      - caddy-config:/config
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   data:
+  caddy-data:
+  caddy-config:

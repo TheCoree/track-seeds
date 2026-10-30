@@ -28,6 +28,7 @@ from ..notify import LogNotifier, Notification, NotificationService, build_notif
 from ..pipeline import Pipeline
 from ..voice import Announcer, Speaker, Synthesizer, build_speaker, phrase_for
 from .eventlog import EventLog
+from .resume import ResumeFile
 from .store import ConfigStore, Crusher, GlobalSettings
 from .worklog import WorkLog
 
@@ -126,7 +127,9 @@ class CameraPublisher:
 class CameraWorker:
     """Одна дробилка: камера → анализ семян → события."""
 
-    def __init__(self, crusher: Crusher, settings: GlobalSettings, store: ConfigStore, bus: EventBus) -> None:
+    def __init__(self, crusher: Crusher, settings: GlobalSettings, store: ConfigStore, bus: EventBus,
+                 resume: dict | None = None) -> None:
+        """resume — состояние анализа до перезапуска сервера (ResumeFile)."""
         self.crusher = crusher
         self._settings = settings
         self._store = store
@@ -140,6 +143,7 @@ class CameraWorker:
         self.state = "stopped"  # stopped, disabled, starting, running, error
         self.error: str | None = None
         self._build_lock = threading.Lock()
+        self._saved = resume  # с чего продолжить анализ, когда его запустят заново
 
     @property
     def id(self) -> str:
@@ -164,6 +168,7 @@ class CameraWorker:
         if self._thread is not None:
             self._thread.join(self.crusher.camera.read_timeout_s + 5)
             self._thread = None
+        self._saved = self.snapshot()  # новая камера в настройках или остановка сервера — продолжить с этого
         self._pipeline = self._source = None
         self.state = "stopped" if self.crusher.enabled else "disabled"
 
@@ -185,6 +190,10 @@ class CameraWorker:
                 log.exception("Дробилка «%s»: анализ не запустился", self.crusher.name)
                 self._stop.wait(_BUILD_RETRY_S)
                 continue
+            # после перезапуска сервера или падения обработки — с прежнего состояния («семена есть уже 2 ч»)
+            if (saved := self.snapshot()) is not None and analyzer.restore(saved, time.time()):
+                log.info("Дробилка «%s»: продолжаю с прежнего состояния (%s)", self.crusher.name,
+                         saved.get("level") or "не определено")
             camera = self.crusher.camera.model_copy(update={"name": self.crusher.name})
             self._source = OpenCVSource(camera)
             self._pipeline = Pipeline(self._source, [analyzer], CameraPublisher(self._bus, self.id), self.crusher.name,
@@ -218,6 +227,13 @@ class CameraWorker:
                     log.exception("Дробилка «%s»: новые настройки не применились", crusher.name)
 
         threading.Thread(target=rebuild, name=f"rebuild-{self.id}", daemon=True).start()
+
+    def snapshot(self) -> dict | None:
+        """Состояние анализа для продолжения после перезапуска; пока анализа нет — прежнее сохранённое."""
+        pipeline = self._pipeline
+        analyzer = next(iter(pipeline.analyzers), None) if pipeline is not None else None
+        snapshot = getattr(analyzer, "snapshot", None)
+        return (snapshot() if snapshot else None) or self._saved
 
     def raw_frame(self) -> np.ndarray | None:
         source = self._source
@@ -271,6 +287,8 @@ class Supervisor:
         self.bus = EventBus()
         self.events = EventLog(data_dir, keep_days, speech=self._speech)
         self.worklog = WorkLog(data_dir)
+        self.resume = ResumeFile(data_dir)
+        self._resumed: dict[str, dict] = {}
         self._workers: dict[str, CameraWorker] = {}
         self._speakers: dict[str, list[Speaker]] = {}
         self._lock = threading.RLock()
@@ -293,10 +311,12 @@ class Supervisor:
         self._rebuild_notifiers()
         self.bus.start()
         self.announcer.start()
+        self._resumed = self.resume.load()
         with self._lock:
             for crusher in self.store.ordered():
                 self._start_worker(crusher)
         self.worklog.start(lambda: [(w.id, w.work_state()) for w in list(self._workers.values())])
+        self.resume.start(self._snapshots)
         self.warm_voice()
 
     def stop(self) -> None:
@@ -308,15 +328,22 @@ class Supervisor:
             t.start()
         for t in threads:
             t.join()
+        self.resume.stop()
+        self.resume.save(self._snapshots())  # каждая дробилка запомнила состояние в stop()
         self.worklog.close()
         self.bus.stop()
         self.announcer.stop(timeout=30)
         self.events.close()
         log.info("Остановлено")
 
+    def _snapshots(self) -> dict[str, dict]:
+        with self._lock:
+            workers = list(self._workers.values())
+        return {w.id: s for w in workers if (s := w.snapshot()) is not None}
+
     def _start_worker(self, crusher: Crusher) -> None:
         self._speakers[crusher.id] = [build_speaker(s) for s in crusher.speakers]
-        worker = CameraWorker(crusher, self.settings, self.store, self.bus)
+        worker = CameraWorker(crusher, self.settings, self.store, self.bus, self._resumed.pop(crusher.id, None))
         self._workers[crusher.id] = worker
         worker.start()
 
