@@ -1,12 +1,14 @@
 "use client";
 
-import { WifiOff } from "lucide-react";
+import { Loader2, ScanEye, Video, WifiOff } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { percent } from "@/lib/format";
-import type { Crusher, SeedZone, ZoneStatus } from "@/lib/types";
+import type { CrusherView, SeedZone, ZoneStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { LiveCanvas, type LiveState } from "./live-view";
 
 const COLORS = {
   covered: "#10b981",
@@ -47,14 +49,75 @@ function useSmoothImage(src: string | null) {
   return { shown, failed };
 }
 
-/** Кадр камеры с зонами дробилки (зоны вшиты в программу — здесь только показ). */
-export function ZoneView({ crusher, tick, className }: { crusher: Crusher; tick: number; className?: string }) {
-  const live = crusher.enabled && crusher.status.connected;
-  const { shown, failed } = useSmoothImage(live ? `/api/crushers/${crusher.id}/frame.jpg?w=1280&t=${tick}` : null);
+export type CameraMode = "zones" | "live";
+const MODE_KEY = "track-seeds:camera-mode";
+const MODE_EVENT = "track-seeds-camera-mode";
+
+/** Как смотреть камеры: с зонами (по умолчанию) или живое видео — запоминается в этом браузере для всех камер. */
+export function useCameraMode(): [CameraMode, (mode: CameraMode) => void] {
+  const [mode, setMode] = useState<CameraMode>("zones");
+  useEffect(() => {
+    try {
+      setMode(localStorage.getItem(MODE_KEY) === "live" ? "live" : "zones");
+    } catch {
+      /* приватный режим */
+    }
+    const listener = (e: Event) => setMode((e as CustomEvent<CameraMode>).detail);
+    window.addEventListener(MODE_EVENT, listener);
+    return () => window.removeEventListener(MODE_EVENT, listener);
+  }, []);
+  const set = (value: CameraMode) => {
+    setMode(value);
+    try {
+      localStorage.setItem(MODE_KEY, value);
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(new CustomEvent(MODE_EVENT, { detail: value }));
+  };
+  return [mode, set];
+}
+
+const MODES: [CameraMode, string, string, typeof Video][] = [
+  ["zones", "Зоны", "Кадр раз в секунду с зонами и уверенностью", ScanEye],
+  ["live", "Оригинал", "Видео с камеры как есть, без обработки", Video],
+];
+
+function ModeSwitch({ mode, onChange }: { mode: CameraMode; onChange: (mode: CameraMode) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Как смотреть камеру" className="absolute left-2 top-2 z-20 flex rounded-lg bg-black/55 p-0.5 text-xs font-medium text-white backdrop-blur-sm">
+      {MODES.map(([value, label, hint, Icon]) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={mode === value}
+          title={hint}
+          onClick={() => onChange(value)}
+          className={cn("flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors", mode === value ? "bg-white text-slate-900" : "hover:bg-white/15")}
+        >
+          <Icon className="size-3.5" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Камера дробилки: «Зоны» — кадр раз в секунду с зонами и состоянием (зоны вшиты в программу — здесь только
+ * показ), «Оригинал» — живое видео с камеры как есть. href — карточка ведёт на страницу дробилки.
+ */
+export function ZoneView({ crusher, tick, className, href }: { crusher: CrusherView; tick: number; className?: string; href?: string }) {
+  const [mode, setMode] = useCameraMode();
+  const [live, setLive] = useState<{ state: LiveState; error: string | null }>({ state: "connecting", error: null });
+  const online = crusher.enabled && crusher.status.connected;
+  const zonesMode = mode === "zones";
+  const { shown, failed } = useSmoothImage(online && zonesMode ? `/api/crushers/${crusher.id}/frame.jpg?w=1280&t=${tick}` : null);
   const statuses = crusher.status.seeds?.zones ?? [];
   const zones = crusher.seeds.zones;
 
-  if (!live || (failed && !shown)) {
+  if (!online || (zonesMode && failed && !shown)) {
     return (
       <Empty className={cn("aspect-video rounded-xl border bg-card", className)}>
         <EmptyHeader>
@@ -62,7 +125,7 @@ export function ZoneView({ crusher, tick, className }: { crusher: Crusher; tick:
             <WifiOff />
           </EmptyMedia>
           <EmptyTitle>{crusher.enabled ? "Нет изображения" : "Наблюдение выключено"}</EmptyTitle>
-          <EmptyDescription>{crusher.status.error ?? (crusher.enabled ? "Камера не подключена — проверьте вкладку «Камера»" : "Включите его на вкладке «Камера»")}</EmptyDescription>
+          <EmptyDescription>{crusher.status.error ?? (crusher.enabled ? "Камера не подключена" : "Дробилка временно не наблюдается")}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -70,51 +133,71 @@ export function ZoneView({ crusher, tick, className }: { crusher: Crusher; tick:
 
   return (
     <div className={cn("camera-frame relative aspect-video w-full overflow-hidden rounded-xl", className)}>
-      {shown ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={shown} alt={`Камера: ${crusher.name}`} className="absolute inset-0 size-full object-cover" draggable={false} />
+      {href && <Link href={href} className="absolute inset-0 z-10" aria-label={`${crusher.name}: подробнее`} />}
+      <ModeSwitch mode={mode} onChange={setMode} />
+      {!zonesMode ? (
+        <>
+          <LiveCanvas url={`/api/crushers/${crusher.id}/live.mjpg`} label={`Камера: ${crusher.name}, видео`} onState={(state, error) => setLive({ state, error })} />
+          {live.state !== "live" && (
+            <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-white/90">
+              {live.state === "error" ? live.error : <><Loader2 className="size-4 animate-spin" /> подключение к видео…</>}
+            </div>
+          )}
+          {live.state === "live" && (
+            <span className="pointer-events-none absolute bottom-2 left-2 z-20 flex items-center gap-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+              <span className="size-1.5 animate-pulse rounded-full bg-red-500" /> live
+            </span>
+          )}
+        </>
       ) : (
-        <Skeleton className="absolute inset-0 rounded-none" />
+        <>
+          {shown ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={shown} alt={`Камера: ${crusher.name}`} className="absolute inset-0 size-full object-cover" draggable={false} />
+          ) : (
+            <Skeleton className="absolute inset-0 rounded-none" />
+          )}
+          <svg className="absolute inset-0 size-full" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+            {zones.map((zone) => {
+              const color = zoneColor(zone, statuses.find((s) => s.id === zone.id));
+              return (
+                <polygon
+                  key={zone.id}
+                  points={zone.points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")}
+                  fill={color}
+                  fillOpacity={0.18}
+                  stroke={color}
+                  strokeWidth={2.5}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+          {zones.map((zone) => {
+            const status = statuses.find((s) => s.id === zone.id);
+            // подпись желоба — над зоной, привода — под ней: зоны рядом, подписи не налезают на соседнюю
+            const below = zone.kind === "motion";
+            const anchor = zone.points.reduce((a, b) => ((below ? b[1] > a[1] : b[1] < a[1]) ? b : a));
+            return (
+              <div
+                key={zone.id}
+                className={cn(
+                  "pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-white shadow sm:text-xs",
+                  !below && "-translate-y-full",
+                )}
+                style={{
+                  left: `${anchor[0] * 100}%`,
+                  top: below ? `calc(${anchor[1] * 100}% + 4px)` : `calc(${anchor[1] * 100}% - 4px)`,
+                  background: zoneColor(zone, status),
+                }}
+              >
+                {zone.name}
+                {zoneValue(zone, status) && <span className="ml-1 tabular-nums opacity-90">· {zoneValue(zone, status)}</span>}
+              </div>
+            );
+          })}
+        </>
       )}
-      <svg className="absolute inset-0 size-full" viewBox="0 0 1000 1000" preserveAspectRatio="none">
-        {zones.map((zone) => {
-          const color = zoneColor(zone, statuses.find((s) => s.id === zone.id));
-          return (
-            <polygon
-              key={zone.id}
-              points={zone.points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")}
-              fill={color}
-              fillOpacity={0.18}
-              stroke={color}
-              strokeWidth={2.5}
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })}
-      </svg>
-      {zones.map((zone) => {
-        const status = statuses.find((s) => s.id === zone.id);
-        // подпись желоба — над зоной, привода — под ней: зоны рядом, подписи не налезают на соседнюю
-        const below = zone.kind === "motion";
-        const anchor = zone.points.reduce((a, b) => ((below ? b[1] > a[1] : b[1] < a[1]) ? b : a));
-        return (
-          <div
-            key={zone.id}
-            className={cn(
-              "pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-white shadow sm:text-xs",
-              !below && "-translate-y-full",
-            )}
-            style={{
-              left: `${anchor[0] * 100}%`,
-              top: below ? `calc(${anchor[1] * 100}% + 4px)` : `calc(${anchor[1] * 100}% - 4px)`,
-              background: zoneColor(zone, status),
-            }}
-          >
-            {zone.name}
-            {zoneValue(zone, status) && <span className="ml-1 tabular-nums opacity-90">· {zoneValue(zone, status)}</span>}
-          </div>
-        );
-      })}
     </div>
   );
 }

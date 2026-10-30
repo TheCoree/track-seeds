@@ -44,6 +44,21 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* состояния дробилки в отчётах: проверены на различимость (в т.ч. при дальтонизме) для светлой и тёмной темы;
+   «нет связи» — нарочно серый, рядом всегда подпись и таблица */
+:root {
+  --state-running: #059669;
+  --state-idle: #f59e0b;
+  --state-stopped: #0284c7;
+  --state-offline: #a8b3c2;
+}
+.dark {
+  --state-running: #10a37f;
+  --state-idle: #d97706;
+  --state-stopped: #3b82f6;
+  --state-offline: #52525b;
+}
+
 /* кадры камер — без сглаживания краёв при масштабировании разметки */
 .camera-frame {
   image-rendering: auto;

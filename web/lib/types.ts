@@ -99,11 +99,17 @@ export interface CameraConn {
   [key: string]: unknown;
 }
 
-/** Дробилка: камера, зоны и вшитые эталоны — из программы, остальное — настройки на месте. */
-export interface Crusher {
+/** Дробилка, как её видит клиент: состояние и зоны, без адресов камер, паролей и динамиков. */
+export interface CrusherView {
   id: string;
   name: string;
   enabled: boolean;
+  seeds: { zones: SeedZone[]; motion_threshold?: unknown; [key: string]: unknown };
+  status: CrusherStatus;
+}
+
+/** Дробилка для разработчика: камера, зоны и вшитые эталоны — из программы, остальное — настройки на месте. */
+export interface Crusher extends CrusherView {
   notify: boolean;
   camera: CameraConn;
   seeds: SeedsConfig;
@@ -111,7 +117,6 @@ export interface Crusher {
   folder: string;
   builtin_camera_url: string;
   config_error: string | null;
-  status: CrusherStatus;
 }
 
 export interface Delivery {
@@ -139,11 +144,12 @@ export interface EventRow {
 }
 
 export interface Overview {
-  crushers: Crusher[];
-  errors: Record<string, string>;
+  crushers: CrusherView[];
+  /** только разработчику */
+  errors?: Record<string, string>;
   events: EventRow[];
   last_seq: number;
-  notify_error: string | null;
+  notify_error?: string | null;
   time: number;
 }
 
@@ -169,8 +175,10 @@ export interface Meta {
   voices: Record<string, string>;
   engines: { piper: boolean; espeak: boolean };
   channels: string[];
+  /** заведён ли разработчик (вход по паролю) */
   auth: boolean;
   config_dir: string;
+  public_url: string;
 }
 
 export interface Speaker {
@@ -214,4 +222,117 @@ export interface ProbeResult {
   measured_fps: number;
   read_failures: number;
   image: string | null;
+}
+
+// --- аккаунты ---
+
+export type Role = "admin" | "client";
+
+/** Кто вошёл. open — «этот компьютер» без входа: разработчика ещё не завели. */
+export interface Me {
+  role: Role;
+  user_id: number | null;
+  username: string;
+  name: string;
+  totp: boolean;
+  open: boolean;
+  session_id: string | null;
+  public_url: string;
+}
+
+export interface AuthInfo {
+  open_here: boolean;
+  has_admin: boolean;
+  admin_here: boolean;
+  public_url: string;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  name: string;
+  role: Role;
+  disabled: boolean;
+  totp: boolean;
+  created: number;
+  last_seen: number | null;
+  sessions: number;
+  widgets: number;
+}
+
+export interface Invite {
+  id: number;
+  note: string;
+  user_id: number | null;
+  created: number;
+  expires: number;
+  used: number | null;
+  used_by: number | null;
+  for_user: string | null;
+  used_login: string | null;
+}
+
+export interface SessionRow {
+  id: string;
+  created: number;
+  last_seen: number;
+  expires: number;
+  ip: string | null;
+  agent: string | null;
+  current: boolean;
+}
+
+export interface WidgetKey {
+  id: number;
+  name: string;
+  created: number;
+  last_used: number | null;
+}
+
+export interface AuthLogRow {
+  id: number;
+  ts: number;
+  action: string;
+  ok: number;
+  user_id: number | null;
+  username: string | null;
+  ip: string | null;
+  agent: string | null;
+  detail: string | null;
+}
+
+// --- отчёты ---
+
+export type WorkState = "running" | "idle" | "stopped" | "offline" | "unknown";
+export type Totals = Record<WorkState | "nodata", number>;
+
+export interface CrusherReport {
+  id: string;
+  name: string;
+  totals: Totals;
+  buckets: Totals[];
+  stops: number;
+  runouts: number;
+  longest_work: number;
+  longest_stop: number;
+  first_work: number | null;
+  last_work: number | null;
+  /** только за день */
+  timeline?: [WorkState, number, number][];
+  stop_list?: [number, number][];
+  runout_list?: [number, number][];
+}
+
+export type Period = "day" | "week" | "month";
+
+export interface Report {
+  period: Period;
+  date: string;
+  start: number;
+  end: number;
+  now: number;
+  edges: number[];
+  prev: string;
+  next: string | null;
+  crushers: CrusherReport[];
 }

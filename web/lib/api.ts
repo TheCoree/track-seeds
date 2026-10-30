@@ -4,6 +4,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** уточнение от сервера, например «totp» — нужен код 2FA */
+    public code: string | null = null,
   ) {
     super(message);
   }
@@ -21,9 +23,36 @@ function detailText(detail: unknown): string {
 }
 
 // Изменяющие запросы — только с этим заголовком: чужая страница в браузере не сможет их отправить (CSRF)
-const CSRF = { "X-Track-Seeds": "1" };
+export const CSRF = { "X-Track-Seeds": "1" };
 
-async function request<T>(method: string, path: string, body?: unknown, raw?: Blob | ArrayBuffer): Promise<T> {
+/** Страницы, открытые без входа: на них 401 — не повод уводить на вход. */
+export const PUBLIC_PAGES = ["/login", "/register"];
+
+/** Здесь 401 — ответ по существу (неверный пароль, ссылка), а не истёкший токен. */
+const NO_REFRESH = ["/auth/login", "/auth/refresh", "/auth/logout", "/auth/register", "/auth/invite", "/auth/setup"];
+
+let refreshing: Promise<boolean> | null = null;
+
+/**
+ * Access-токен живёт 15 минут: на 401 меняем его по refresh-токену (оба — в HttpOnly-cookie) и повторяем запрос.
+ * Обновление одно на все запросы вкладки — иначе сервер увидел бы старый refresh-токен дважды.
+ */
+export function refreshSession(): Promise<boolean> {
+  refreshing ??= fetch("/api/auth/refresh", { method: "POST", headers: CSRF, cache: "no-store" })
+    .then((res) => res.ok)
+    .catch(() => false)
+    .finally(() => setTimeout(() => (refreshing = null), 1000));
+  return refreshing;
+}
+
+/** Сессия закончилась — на страницу входа, вернуться туда же. */
+export function toLogin() {
+  if (typeof window === "undefined" || PUBLIC_PAGES.some((p) => window.location.pathname.startsWith(p))) return;
+  const back = window.location.pathname + window.location.search;
+  window.location.assign(`/login/?next=${encodeURIComponent(back)}`);
+}
+
+async function request<T>(method: string, path: string, body?: unknown, raw?: Blob | ArrayBuffer, retry = true): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
@@ -38,14 +67,21 @@ async function request<T>(method: string, path: string, body?: unknown, raw?: Bl
   } catch {
     throw new ApiError(0, "Нет связи с сервером track-seeds");
   }
+  if (res.status === 401 && retry && !NO_REFRESH.some((p) => path.startsWith(p))) {
+    if (await refreshSession()) return request<T>(method, path, body, raw, false);
+    toLogin();
+  }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let code: string | null = null;
     try {
-      message = detailText((await res.json()).detail);
+      const data = await res.json();
+      message = detailText(data.detail);
+      code = data.code ?? null;
     } catch {
       /* не JSON */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code);
   }
   return res.json() as Promise<T>;
 }

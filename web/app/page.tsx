@@ -11,10 +11,10 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Skeleton } from "@/components/ui/skeleton";
 import { ZoneView } from "@/components/zone-view";
 import { useTick } from "@/lib/api";
-import type { Crusher } from "@/lib/types";
+import type { CrusherView } from "@/lib/types";
 
 export default function Dashboard() {
-  const { overview } = useApp();
+  const { overview, isAdmin } = useApp();
   const tick = useTick(2000);
 
   if (!overview)
@@ -32,7 +32,7 @@ export default function Dashboard() {
         <p className="text-sm text-muted-foreground">Семена в желобе и работа привода — обновляется каждые 2 секунды</p>
       </div>
 
-      {overview.notify_error && (
+      {isAdmin && overview.notify_error && (
         <Alert variant="destructive">
           <CircleAlert />
           <AlertTitle>Уведомления на телефон не настроены</AlertTitle>
@@ -61,23 +61,23 @@ export default function Dashboard() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <EventsList events={overview.events} crushers={overview.crushers} compact />
+          <EventsList events={overview.events} crushers={overview.crushers} compact canEdit={isAdmin} />
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function CrusherCard({ crusher, tick, now }: { crusher: Crusher; tick: number; now: number }) {
+function CrusherCard({ crusher, tick, now }: { crusher: CrusherView; tick: number; now: number }) {
   const zones = crusher.status.seeds?.zones ?? [];
   return (
     <Card className="pt-0">
-      <Link href={`/crusher?id=${crusher.id}`} className="relative block">
-        <ZoneView crusher={crusher} tick={tick} className="rounded-none rounded-t-xl border-0" />
-        <div className="absolute right-2 top-2">
+      <div className="relative">
+        <ZoneView crusher={crusher} tick={tick} href={`/crusher?id=${crusher.id}`} className="rounded-none rounded-t-xl border-0" />
+        <div className="pointer-events-none absolute right-2 top-2 z-20">
           <ConnectionBadge crusher={crusher} />
         </div>
-      </Link>
+      </div>
       <CardHeader>
         <CardTitle className="text-lg">{crusher.name}</CardTitle>
         <CardAction>

@@ -1,10 +1,11 @@
 "use client";
 
-import { BellRing, CircleCheck, Factory, History, LayoutDashboard, Lock, Menu, PanelLeftClose, PanelLeftOpen, Siren, Volume2, VolumeX, Wheat } from "lucide-react";
+import { BarChart3, BellRing, CircleCheck, Factory, History, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShieldCheck, Siren, UserRound, UsersRound, Volume2, VolumeX, Wheat } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, Suspense, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
   SidebarContent,
@@ -23,27 +24,37 @@ import {
 } from "@/components/ui/sidebar";
 import { toast, Toaster } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, usePoll } from "@/lib/api";
+import { api, CSRF, PUBLIC_PAGES, toLogin, usePoll } from "@/lib/api";
 import { duration } from "@/lib/format";
-import type { EventRow, Meta, Overview } from "@/lib/types";
+import type { EventRow, Me, Meta, Overview } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { crusherState } from "./crusher-status";
+import { PwaRegister } from "./pwa";
 import { ThemeToggle } from "./theme";
 
 interface AppData {
   overview: Overview | null;
   overviewError: string | null;
   reloadOverview: () => Promise<void>;
+  /** только разработчику */
   meta: Meta | null;
+  me: Me | null;
+  isAdmin: boolean;
 }
 
-const AppContext = createContext<AppData>({ overview: null, overviewError: null, reloadOverview: async () => {}, meta: null });
+const AppContext = createContext<AppData>({ overview: null, overviewError: null, reloadOverview: async () => {}, meta: null, me: null, isAdmin: false });
 export const useApp = () => useContext(AppContext);
 
-const NAV: [string, string, typeof LayoutDashboard][] = [
+type NavItem = [string, string, typeof LayoutDashboard];
+
+const NAV: NavItem[] = [
   ["/", "Обзор", LayoutDashboard],
+  ["/reports", "Отчёты", BarChart3],
   ["/events", "События", History],
+];
+const ADMIN_NAV: NavItem[] = [
   ["/settings", "Уведомления и голос", BellRing],
+  ["/access", "Клиенты и доступ", UsersRound],
 ];
 
 const SIDEBAR_KEY = "track-seeds:sidebar";
@@ -70,39 +81,120 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { data: overview, error: overviewError, reload } = usePoll<Overview>("/overview", 2000);
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
-  useEffect(() => {
-    api.get<Meta>("/meta").then(setMeta).catch(() => {});
-  }, []);
-
+  const pathname = usePathname();
+  const isPublic = PUBLIC_PAGES.some((p) => pathname.startsWith(p));
   return (
     <TooltipProvider>
       <Toaster>
-        <AppContext.Provider value={{ overview, overviewError, reloadOverview: reload, meta }}>
-          <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <AppSidebar />
-            <SidebarInset className="min-w-0 bg-muted/40">
-              <TopBar />
-              {overviewError && !overview && (
-                <div className="bg-destructive px-4 py-2 text-sm text-white">Нет связи с сервером: {overviewError}</div>
-              )}
-              <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</main>
-            </SidebarInset>
-          </SidebarProvider>
-          <EventWatcher />
-        </AppContext.Provider>
+        {isPublic ? <PublicShell>{children}</PublicShell> : <SignedIn>{children}</SignedIn>}
+        <PwaRegister />
       </Toaster>
     </TooltipProvider>
   );
 }
 
+/** Вход и регистрация: без меню и без опроса сервера. */
+function PublicShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-svh flex-col bg-muted/40">
+      <header className="flex h-14 items-center justify-between px-4">
+        <span className="flex items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Wheat className="size-4" />
+          </span>
+          <span className="text-sm font-semibold">track-seeds</span>
+        </span>
+        <ThemeToggle />
+      </header>
+      <main className="flex flex-1 items-start justify-center px-4 pb-10 pt-[8vh]">{children}</main>
+    </div>
+  );
+}
+
+/** Кто вошёл — до того, как что-то показывать; не вошёл — на страницу входа. */
+function SignedIn({ children }: { children: ReactNode }) {
+  const [me, setMe] = useState<Me | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .get<Me>("/auth/me")
+      .then(setMe)
+      .catch((e) => {
+        if (e?.status === 401) toLogin();
+        else setError(e instanceof Error ? e.message : String(e));
+      });
+  }, []);
+  if (!me)
+    return (
+      <div className="flex min-h-svh items-center justify-center p-6 text-sm text-muted-foreground">
+        {error ? `Нет связи с сервером: ${error}` : <Skeleton className="h-64 w-full max-w-3xl rounded-xl" />}
+      </div>
+    );
+  return <Shell me={me}>{children}</Shell>;
+}
+
+function Shell({ me, children }: { me: Me; children: ReactNode }) {
+  const { data: overview, error: overviewError, reload } = usePoll<Overview>("/overview", 2000);
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
+  const isAdmin = me.role === "admin";
+  useEffect(() => {
+    if (isAdmin) api.get<Meta>("/meta").then(setMeta).catch(() => {});
+  }, [isAdmin]);
+
+  return (
+    <AppContext.Provider value={{ overview, overviewError, reloadOverview: reload, meta, me, isAdmin }}>
+      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <AppSidebar />
+        <SidebarInset className="min-w-0 bg-muted/40">
+          <TopBar />
+          {overviewError && !overview && <div className="bg-destructive px-4 py-2 text-sm text-white">Нет связи с сервером: {overviewError}</div>}
+          <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</main>
+        </SidebarInset>
+      </SidebarProvider>
+      <EventWatcher />
+    </AppContext.Provider>
+  );
+}
+
+/** Страница только для разработчика: клиенту — понятный отказ вместо ошибок API. */
+export function AdminOnly({ children }: { children: ReactNode }) {
+  const { isAdmin } = useApp();
+  if (isAdmin) return <>{children}</>;
+  return (
+    <div className="flex flex-col items-center gap-2 py-20 text-center text-muted-foreground">
+      <ShieldCheck className="size-8" />
+      <div className="font-medium text-foreground">Только для разработчика</div>
+      <Link href="/" className="text-sm underline underline-offset-2">
+        К дробилкам
+      </Link>
+    </div>
+  );
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST", headers: CSRF }).catch(() => {});
+  window.location.assign("/login/");
+}
+
 function AppSidebar() {
-  const { meta } = useApp();
+  const { me, isAdmin } = useApp();
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   const close = () => setOpenMobile(false); // на телефоне меню — шторка: выбрали пункт — закрыть
+
+  const menu = (items: NavItem[]) => (
+    <SidebarMenu>
+      {items.map(([href, label, Icon]) => (
+        <SidebarMenuItem key={href}>
+          <SidebarMenuButton tooltip={label} isActive={href === "/" ? pathname === "/" : pathname.startsWith(href)} onClick={close} render={<Link href={href} />}>
+            <Icon />
+            <span>{label}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -113,7 +205,7 @@ function AppSidebar() {
           </span>
           <span className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold">track-seeds</span>
-            <span className="text-xs text-muted-foreground">семена в дробилках</span>
+            <span className="text-xs text-muted-foreground">{isAdmin ? "панель разработчика" : "семена в дробилках"}</span>
           </span>
         </Link>
       </SidebarHeader>
@@ -128,31 +220,36 @@ function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupLabel>Сервис</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {NAV.map(([href, label, Icon]) => (
-                <SidebarMenuItem key={href}>
-                  <SidebarMenuButton
-                    tooltip={label}
-                    isActive={href === "/" ? pathname === "/" : pathname.startsWith(href)}
-                    onClick={close}
-                    render={<Link href={href} />}
-                  >
-                    <Icon />
-                    <span>{label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
+          <SidebarGroupLabel>Работа</SidebarGroupLabel>
+          <SidebarGroupContent>{menu(NAV)}</SidebarGroupContent>
         </SidebarGroup>
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Разработчик</SidebarGroupLabel>
+            <SidebarGroupContent>{menu(ADMIN_NAV)}</SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <Lock className="size-3.5 shrink-0" />
-          <span className="group-data-[collapsible=icon]:hidden">{meta?.auth ? "Вход по паролю" : "Доступ только с этого компьютера"}</span>
-        </div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" tooltip="Мой аккаунт" isActive={pathname.startsWith("/account")} onClick={close} render={<Link href="/account" />}>
+              <UserRound />
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate">{me?.name}</span>
+                <span className="truncate text-xs text-muted-foreground">{me?.open ? "без входа · этот компьютер" : `${me?.username} · ${isAdmin ? "разработчик" : "клиент"}`}</span>
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {!me?.open && (
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="Выйти" onClick={logout}>
+                <LogOut />
+                <span>Выйти</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+        </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -353,7 +450,7 @@ function playAlarm(e: EventRow) {
     () =>
       new Promise<void>((resolve) => {
         if (e.speech) {
-          const audio = new Audio(`/api/voice/say.wav?text=${encodeURIComponent(e.speech)}`);
+          const audio = new Audio(`/api/events/${e.uid}/speech.wav`);
           audio.onended = () => resolve();
           audio.onerror = () => {
             beep();

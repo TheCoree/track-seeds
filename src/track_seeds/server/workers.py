@@ -12,8 +12,16 @@ import numpy as np
 from ..analyzers.seeds import SeedsAnalyzer
 from ..bus import EventBus
 from ..camera import OpenCVSource
-from ..config import (AppConfig, CameraConfig, PlatesConfig, PresenceConfig, PreviewConfig, SeedSample, SeedsConfig,
-                      Settings)
+from ..config import (
+    AppConfig,
+    CameraConfig,
+    PlatesConfig,
+    PresenceConfig,
+    PreviewConfig,
+    SeedSample,
+    SeedsConfig,
+    Settings,
+)
 from ..detection import FrameCachedDetector, build_detector
 from ..events import Event
 from ..notify import LogNotifier, Notification, NotificationService, build_notifiers
@@ -21,6 +29,7 @@ from ..pipeline import Pipeline
 from ..voice import Announcer, Speaker, Synthesizer, build_speaker, phrase_for
 from .eventlog import EventLog
 from .store import ConfigStore, Crusher, GlobalSettings
+from .worklog import WorkLog
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +87,31 @@ class FrameHub:
             return self._seq, self._jpeg, self._ts
 
 
+class LiveHub:
+    """Кадры камеры как есть, без разметки, — просмотр «Оригинал». Каждый кадр кодируется в JPEG
+    один раз на всех зрителей и не чаще fps; пока никто не смотрит, ничего не кодируется."""
+
+    def __init__(self, fps: float = 12, quality: int = 75) -> None:
+        self._interval = 1 / fps
+        self._quality = quality
+        self._lock = threading.Lock()
+        self._jpeg: bytes | None = None
+        self._index = -1
+        self._seq = 0
+        self._encoded_at = 0.0
+
+    def latest(self, source: OpenCVSource | None) -> tuple[int, bytes | None]:
+        frame = source.wait_frame(-1, 0) if source is not None else None
+        with self._lock:
+            now = time.monotonic()
+            if frame is not None and frame.index != self._index and now - self._encoded_at >= self._interval:
+                ok, buf = cv2.imencode(".jpg", frame.image, [cv2.IMWRITE_JPEG_QUALITY, self._quality])
+                if ok:
+                    self._jpeg, self._index, self._encoded_at = buf.tobytes(), frame.index, now
+                    self._seq += 1
+            return self._seq, self._jpeg
+
+
 class CameraPublisher:
     """Проставляет id дробилки в события, чтобы журнал и голос знали, откуда они."""
 
@@ -98,6 +132,7 @@ class CameraWorker:
         self._store = store
         self._bus = bus
         self.hub = FrameHub()
+        self.live = LiveHub()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._pipeline: Pipeline | None = None
@@ -189,6 +224,27 @@ class CameraWorker:
         frame = source.wait_frame(-1, 0) if source is not None else None
         return frame.image if frame is not None else None
 
+    def live_jpeg(self) -> tuple[int, bytes | None]:
+        """Последний кадр камеры в JPEG для просмотра «Оригинал» и его номер."""
+        return self.live.latest(self._source)
+
+    def work_state(self) -> str | None:
+        """Для отчётов: running, idle (крутится без зерна), stopped, offline, unknown; None — не наблюдается."""
+        if not self.crusher.enabled:
+            return None
+        pipeline, source = self._pipeline, self._source
+        if self.state != "running" or pipeline is None or source is None or not source.connected:
+            return "offline"
+        if time.time() - pipeline.stats.last_frame_ts > 30:
+            return "offline"
+        analyzer = next(iter(pipeline.analyzers), None)
+        running = getattr(analyzer, "running", None)
+        if running is None:
+            return "unknown"
+        if not running:
+            return "stopped"
+        return "idle" if getattr(analyzer, "level", None) == "empty" else "running"
+
     def status(self) -> dict:
         pipeline, source = self._pipeline, self._source
         result: dict = {"state": self.state, "error": self.error, "connected": False, "since": None}
@@ -214,6 +270,7 @@ class Supervisor:
         self.data_dir = data_dir
         self.bus = EventBus()
         self.events = EventLog(data_dir, keep_days, speech=self._speech)
+        self.worklog = WorkLog(data_dir)
         self._workers: dict[str, CameraWorker] = {}
         self._speakers: dict[str, list[Speaker]] = {}
         self._lock = threading.RLock()
@@ -239,6 +296,7 @@ class Supervisor:
         with self._lock:
             for crusher in self.store.ordered():
                 self._start_worker(crusher)
+        self.worklog.start(lambda: [(w.id, w.work_state()) for w in list(self._workers.values())])
         self.warm_voice()
 
     def stop(self) -> None:
@@ -250,6 +308,7 @@ class Supervisor:
             t.start()
         for t in threads:
             t.join()
+        self.worklog.close()
         self.bus.stop()
         self.announcer.stop(timeout=30)
         self.events.close()

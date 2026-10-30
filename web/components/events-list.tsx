@@ -9,7 +9,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empt
 import { Spinner } from "@/components/ui/spinner";
 import { api, fileUrl } from "@/lib/api";
 import { dateTime } from "@/lib/format";
-import type { Crusher, EventRow, Label } from "@/lib/types";
+import type { CrusherView, EventRow, Label } from "@/lib/types";
 import { useAction } from "@/lib/use-action";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +20,7 @@ const SEVERITY = {
 };
 
 /** Список событий; для событий по семенам — «сделать кадр эталоном» (кадр без разметки сохранён). */
-export function EventsList({ events, crushers, compact }: { events: EventRow[]; crushers?: Crusher[]; compact?: boolean }) {
+export function EventsList({ events, crushers, compact, canEdit }: { events: EventRow[]; crushers?: CrusherView[]; compact?: boolean; canEdit?: boolean }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const { busy, run } = useAction();
 
@@ -52,7 +52,7 @@ export function EventsList({ events, crushers, compact }: { events: EventRow[]; 
       <ul className="flex flex-col gap-2">
         {events.map((e) => {
           const crusher = crushers?.find((c) => c.id === e.camera_id);
-          const canSample = !compact && e.frame && e.type === "SeedsLevelChanged" && crusher?.seeds.zones.some((z) => z.kind !== "motion");
+          const canSample = canEdit && !compact && e.frame && e.type === "SeedsLevelChanged" && crusher?.seeds.zones.some((z) => z.kind !== "motion");
           return (
             <li
               key={e.uid}
