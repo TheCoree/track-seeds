@@ -1,8 +1,10 @@
 """Журнал событий для веб-интерфейса: SQLite + снимки, результаты доставки уведомлений."""
 
 import dataclasses
+import hmac
 import json
 import logging
+import secrets
 import shutil
 import sqlite3
 import threading
@@ -43,6 +45,10 @@ CREATE TABLE IF NOT EXISTS deliveries (
     error     TEXT
 );
 CREATE INDEX IF NOT EXISTS deliveries_event ON deliveries (event_uid);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 _SEVERITY = {"urgent": "alert", "high": "warning"}
@@ -88,7 +94,16 @@ class EventLog:
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
         self._migrate()
+        self._link_key = self._key("link_key")
         self._last_prune = 0.0
+
+    def _key(self, name: str) -> bytes:
+        row = self._db.execute("SELECT value FROM meta WHERE key = ?", (name,)).fetchone()
+        if row is None:
+            row = (secrets.token_hex(32),)
+            self._db.execute("INSERT INTO meta (key, value) VALUES (?, ?)", (name, row[0]))
+            self._db.commit()
+        return bytes.fromhex(row[0])
 
     def _migrate(self) -> None:
         """Столбец kind (вид события) — у журналов, записанных до него, вычисляется из сохранённых данных."""
@@ -204,6 +219,26 @@ class EventLog:
         with self._lock:
             row = self._db.execute("SELECT * FROM events WHERE uid = ?", (uid,)).fetchone()
         return dict(row) if row else None
+
+    def _sign(self, uid: str) -> str:
+        return hmac.new(self._link_key, uid.encode(), "sha256").hexdigest()[:32]
+
+    def snapshot_link(self, uid: str) -> str | None:
+        """Путь к снимку события без входа — для уведомлений: телефон открывает его из ntfy, где нет
+        входа на сайт. Подпись — ключом журнала (ссылку не подобрать по id события); работает, пока
+        событие в журнале. None — у события нет снимка."""
+        event = self.get(uid)
+        if event is None or not event["snapshot"]:
+            return None
+        return f"/api/snapshots/{uid}.jpg?k={self._sign(uid)}"
+
+    def snapshot_file(self, uid: str, signature: str) -> Path | None:
+        """Файл снимка по ссылке из snapshot_link; None — подпись не та или снимок уже удалён."""
+        if not hmac.compare_digest(signature.encode(), self._sign(uid).encode()):
+            return None
+        event = self.get(uid)
+        path = self._dir / event["snapshot"] if event and event["snapshot"] else None
+        return path if path is not None and path.is_file() else None
 
     def last_seq(self) -> int:
         with self._lock:

@@ -28,6 +28,9 @@ class NtfyNotifier:
             self._headers["Authorization"] = f"Basic {base64.b64encode(creds).decode()}"
 
     def send(self, notification: Notification) -> None:
+        if notification.image_url:
+            self._send_link(notification)
+            return
         if notification.image:
             try:
                 self._send_with_image(notification)
@@ -48,6 +51,12 @@ class NtfyNotifier:
 
     def _send_text(self, n: Notification) -> None:
         self._post(self._params(n), n.message.encode(), {"Content-Type": "text/plain; charset=utf-8"})
+
+    def _send_link(self, n: Notification) -> None:
+        # Снимок не загружается в ntfy: приложение само скачивает его с нашего сайта и показывает в уведомлении,
+        # как загруженный (Android — до 1 МБ по умолчанию, iPhone — по .jpg в адресе), пока событие в журнале
+        params = self._params(n) | {"attach": n.image_url or "", "filename": "snapshot.jpg"}
+        self._post(params, n.message.encode(), {"Content-Type": "text/plain; charset=utf-8"})
 
     def _send_with_image(self, n: Notification) -> None:
         params = self._params(n) | {"message": n.message, "filename": "snapshot.jpg"}

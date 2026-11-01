@@ -76,7 +76,7 @@ def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
                  "или через ssh -L 8080:localhost:8080).")
     store = open_store(settings)
     static_dir = web.static_dir or Path(__file__).resolve().parents[3] / "web" / "out"
-    supervisor = Supervisor(store, settings.app.data_dir, web.events_keep_days)
+    supervisor = Supervisor(store, settings.app.data_dir, web.events_keep_days, web.public_url)
     try:
         app = create_app(supervisor, static_dir, password, manage=True, allowed_networks=web.allowed_networks,
                          admin_networks=web.admin_networks, trusted_proxies=web.trusted_proxies,

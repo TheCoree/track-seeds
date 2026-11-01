@@ -324,9 +324,10 @@ class _Security:
         async def send_with_headers(message) -> None:
             if message["type"] == "http.response.start":
                 current = list(message.get("headers", []))
-                if api and not any(k.lower() == b"cache-control" for k, _ in current):
+                own = {k.lower() for k, _ in current}  # заголовок, заданный маршрутом, — главнее общего
+                if api and b"cache-control" not in own:
                     current.append((b"cache-control", b"no-store"))
-                message["headers"] = current + extra
+                message["headers"] = current + [h for h in extra if h[0] not in own]
             await send(message)
 
         await self._app(scope, receive, send_with_headers)
@@ -994,6 +995,17 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
         """Сколько событий каждого вида — числа на кнопках фильтра."""
         return sup.events.counts(camera_id, tests=who.admin)
 
+    @public.get("/api/snapshots/{uid}.jpg")
+    def event_snapshot(uid: str, k: str = Query("", max_length=64)) -> FileResponse:
+        """Снимок из уведомления — без входа: телефон открывает его из приложения ntfy. Ссылка подписана
+        журналом событий (EventLog.snapshot_link) и работает, пока событие в журнале."""
+        path = sup.events.snapshot_file(uid, k)
+        if path is None:
+            raise HTTPException(404, "Снимок не найден: ссылка неверная или событие старше срока хранения")
+        # cross-origin: веб-версия ntfy (ntfy.sh/app) показывает снимок в ленте со своего адреса
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400",
+                                                                    "Cross-Origin-Resource-Policy": "cross-origin"})
+
     @viewer_api.get("/api/files/{path:path}")
     def files(path: str) -> FileResponse:
         target = (data_dir / path).resolve()
@@ -1097,7 +1109,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
     @admin_api.post("/api/notify/test")
     def notify_test() -> dict[str, Any]:
         notification = Notification(title="track-seeds: тестовое уведомление",
-                                    message=f"Уведомления работают — {time.strftime('%H:%M:%S')}",
+                                    message=f"Уведомления работают — {time.strftime('%d.%m %H:%M:%S')}",
                                     tags=("test_tube",))
         return {"results": sup.test_notify(notification), "notify_error": sup.notify_error}
 

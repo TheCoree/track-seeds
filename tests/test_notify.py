@@ -1,6 +1,7 @@
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -8,7 +9,8 @@ import pytest
 
 from track_seeds.bus import EventBus
 from track_seeds.config import NotifySettings, NtfySettings
-from track_seeds.events import CameraOffline, PeopleCountChanged, PersonEntered, PersonLeft
+from track_seeds.events import (CameraOffline, PeopleCountChanged, PersonEntered, PersonLeft, SeedsLevelChanged,
+                                VehicleArrived)
 from track_seeds.notify import Notification, NotificationService, NtfyNotifier
 from track_seeds.notify.messages import format_duration, format_event
 
@@ -91,6 +93,16 @@ def test_attachment_rejected_falls_back_to_text(ntfy):
     assert ntfy.requests[1].body == b"M"
 
 
+def test_snapshot_goes_as_link_to_the_site(ntfy):
+    # Снимок с сайта — ссылкой: в ntfy ничего не загружается, телефон берёт его по ссылке
+    link = "https://seeds.example.ru/api/snapshots/abc.jpg?k=123"
+    make_ntfy(ntfy.url).send(Notification(title="T", message="Сообщение", image=b"jpeg", image_url=link))
+
+    (req,) = ntfy.requests
+    assert req.method == "POST" and req.body.decode() == "Сообщение"
+    assert req.query["attach"] == link and req.query["filename"] == "snapshot.jpg" and "click" not in req.query
+
+
 def test_missing_topic_is_config_error():
     with pytest.raises(ValueError, match="NTFY_TOPIC"):
         NtfyNotifier(NtfySettings(_env_file=None, topic=""))
@@ -131,3 +143,14 @@ def test_messages():
     assert format_event(CameraOffline(camera="К", since=0)).priority == "high"
     left_one = format_event(PeopleCountChanged(camera="К", count=1, previous=2))
     assert left_one.title == "К: кто-то ушёл" and "людей в кадре: 1 (было 2)" in left_one.message
+
+
+def test_messages_have_date_and_time():
+    # Уведомление могут открыть через несколько дней: в тексте — и дата, и время
+    ts = datetime(2026, 11, 1, 14, 5, 3).timestamp()
+    empty = format_event(SeedsLevelChanged(camera="Д1", ts=ts, level="empty", previous="ok", duration_s=60))
+    assert empty.message.startswith("01.11 14:05:03 — в желобе пусто")
+    assert format_event(CameraOffline(camera="К", since=ts)).message == "Камера недоступна с 01.11 14:05:03"
+    car = format_event(VehicleArrived(camera="К", ts=ts, vehicle_id="1", plate=None, plate_verified=False,
+                                      plate_confidence=0, color="белый", kind="car"))
+    assert car.message.endswith("Время: 01.11 14:05:03")
