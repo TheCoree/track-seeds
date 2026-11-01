@@ -196,6 +196,18 @@ def test_developer_panel_only_from_local_network(site):
     assert lan.get("/api/admin/users").status_code == 200
 
 
+def test_developer_session_refreshes_outside(site):
+    """Разработчик вошёл в офисе и ушёл с телефоном в мобильную сеть — сессия продлевается, на вход не выкидывает."""
+    app, _ = site
+    office = browser(app)
+    login(office, "admin", ADMIN_PW)
+    street = browser(app, OUTSIDE)
+    street.cookies.set("ts_refresh", office.cookies.get("ts_refresh", path="/api/auth"), path="/api/auth")
+    refreshed = street.post("/api/auth/refresh")
+    assert refreshed.status_code == 200 and refreshed.json()["role"] == "admin"
+    assert "ts_refresh=" in refreshed.headers["set-cookie"]
+
+
 def test_refresh_rotates_and_reuse_closes_the_session(site, monkeypatch):
     app, _ = site
     admin = browser(app)

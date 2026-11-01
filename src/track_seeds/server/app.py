@@ -478,9 +478,8 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
     def refresh(request: Request) -> Response:
         ip, agent = client_info(request)
         try:
+            # разработчику — тоже из любой сети: вошёл в офисе, ушёл с телефоном — сессия не слетает
             user, session_id, token = accounts.refresh(request.cookies.get(REFRESH_COOKIE, ""), ip, agent)
-            if user["role"] == "admin" and not request.state.admin_network:
-                raise AuthError("Панель разработчика — только из локальной сети", 403)
         except AuthError as e:
             return signed_out(JSONResponse({"detail": str(e), "code": e.code}, status_code=e.status))
         return signed_in(request, user, session_id, token)
