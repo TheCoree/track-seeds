@@ -36,8 +36,8 @@ class NotificationService:
         notification = self._format(event)
         if notification is None:
             return
-        if not self._settings.attach_snapshot and notification.image:
-            notification = dataclasses.replace(notification, image=None)
+        if not self._settings.attach_snapshot and (notification.image or notification.image_url):
+            notification = dataclasses.replace(notification, image=None, image_url=None)
         for notifier in self._notifiers:
             error = self.deliver(notifier, notification)
             if self._on_result is not None:

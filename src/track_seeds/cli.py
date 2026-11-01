@@ -185,7 +185,7 @@ def cmd_notify_test(settings: Settings, args: argparse.Namespace) -> int:
     image = args.image.read_bytes() if args.image else None
     notification = Notification(
         title=f"{settings.camera.name}: тестовое уведомление",
-        message=f"track-seeds работает — {time.strftime('%H:%M:%S')}",
+        message=f"track-seeds работает — {time.strftime('%d.%m %H:%M:%S')}",
         tags=("test_tube",),
         image=image,
     )

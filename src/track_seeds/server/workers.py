@@ -25,6 +25,7 @@ from ..config import (
 from ..detection import FrameCachedDetector, build_detector
 from ..events import Event
 from ..notify import LogNotifier, Notification, NotificationService, build_notifiers
+from ..notify.messages import format_event
 from ..pipeline import Pipeline
 from ..voice import Announcer, Speaker, Synthesizer, build_speaker, phrase_for
 from .eventlog import EventLog
@@ -281,9 +282,11 @@ class CameraWorker:
 class Supervisor:
     """Всё приложение в режиме сервера."""
 
-    def __init__(self, store: ConfigStore, data_dir: Path, keep_days: int = 30) -> None:
+    def __init__(self, store: ConfigStore, data_dir: Path, keep_days: int = 30, public_url: str = "") -> None:
+        """public_url — адрес сайта снаружи (WEB_PUBLIC_URL): снимки в уведомлениях идут ссылкой на него."""
         self.store = store
         self.data_dir = data_dir
+        self.public_url = public_url.rstrip("/")
         self.bus = EventBus()
         self.events = EventLog(data_dir, keep_days, speech=self._speech)
         self.worklog = WorkLog(data_dir)
@@ -292,7 +295,7 @@ class Supervisor:
         self._workers: dict[str, CameraWorker] = {}
         self._speakers: dict[str, list[Speaker]] = {}
         self._lock = threading.RLock()
-        self._notifications = NotificationService([LogNotifier()], store.settings.notify)
+        self._notifications = NotificationService([LogNotifier()], store.settings.notify, self._format)
         self.notify_error: str | None = None
         self._synth: Synthesizer | None = None
         self.announcer = Announcer(self.synthesizer, lambda: self.settings.voice, self.targets,
@@ -354,7 +357,17 @@ class Supervisor:
         except ValueError as e:
             log.error("Каналы уведомлений: %s", e)
             notifiers, self.notify_error = [LogNotifier()], str(e)
-        self._notifications = NotificationService(notifiers, self.settings.notify, on_result=self.events.delivery)
+        self._notifications = NotificationService(notifiers, self.settings.notify, self._format,
+                                                  on_result=self.events.delivery)
+
+    def _format(self, event: Event) -> Notification | None:
+        """Снимок — ссылкой на сайт, если он виден из интернета: на ntfy.sh вложение живёт 3 часа, а в журнале
+        событий — WEB_EVENTS_KEEP_DAYS. Журнал записал событие раньше (он первый подписчик шины)."""
+        notification = format_event(event)
+        if notification is None or not notification.image or not self.public_url:
+            return notification
+        link = self.events.snapshot_link(event.id)
+        return dataclasses.replace(notification, image_url=self.public_url + link) if link else notification
 
     # --- подписчики шины ---
 

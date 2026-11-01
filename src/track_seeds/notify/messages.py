@@ -21,7 +21,9 @@ def format_duration(seconds: float) -> str:
 
 
 def _clock(ts: float) -> str:
-    return datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+    # С датой: уведомления со снимками хранятся 30 дней, а клиент ntfy подписывает старые английским
+    # «yesterday» — по одному времени в тексте не понять, какой это был день
+    return datetime.fromtimestamp(ts).strftime("%d.%m %H:%M:%S")
 
 
 LEVEL_NAMES = {"ok": "семена есть", "low": "семян мало", "empty": "семена закончились", "unknown": "не видно",

@@ -1,6 +1,7 @@
 """Аккаунты и доступ: разработчик, клиенты по приглашению, токены, 2FA, виджет; отчёты о работе; живое видео."""
 
 import ipaddress
+import logging
 import sys
 import time
 from datetime import date, datetime
@@ -70,7 +71,7 @@ def register(client: TestClient, code: str, username: str = "ivan", password: st
 
 
 PUBLIC = {"/api/health", "/api/auth/info", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout",
-          "/api/auth/invite", "/api/auth/register", "/api/auth/setup", "/api/{path:path}"}
+          "/api/auth/invite", "/api/auth/register", "/api/auth/setup", "/api/snapshots/{uid}.jpg", "/api/{path:path}"}
 
 
 def test_every_api_route_needs_sign_in_except_public_ones(site):
@@ -84,6 +85,45 @@ def test_every_api_route_needs_sign_in_except_public_ones(site):
         for method in route.methods:
             response = stranger.request(method, path)
             assert response.status_code == 401, (method, route.path, response.status_code)
+
+
+def test_notification_snapshot_is_a_signed_link_to_the_site(tmp_path, video, caplog):  # noqa: F811
+    """С WEB_PUBLIC_URL снимок в уведомлении — ссылкой на сайт, а не файлом в ntfy (на ntfy.sh вложение
+    живёт 3 часа, ссылка — пока событие в журнале). Открывается без входа, но только с подписью."""
+    jpeg = b"\xff\xd8jpeg"
+    store = new_store(tmp_path / "config", make_spec(tmp_path, str(video)))
+    sup = Supervisor(store, tmp_path / "data", public_url="https://seeds.example.ru/")
+    sup.start()
+    try:
+        app = create_app(sup, None, ADMIN_PW, allowed_networks=["0.0.0.0/0", "::/0"], admin_networks=LOCAL_NETWORKS)
+        caplog.set_level(logging.WARNING, "track_seeds.notify")
+        sup.bus.publish(SeedsLevelChanged(camera="Дробилка 1", camera_id="drobilka-1", level="empty", previous="ok",
+                                          duration_s=60, snapshot=jpeg))
+        sent = wait_for(lambda: next((r.getMessage() for r in caplog.records
+                                      if "закончились семена" in r.getMessage()), None))
+        link = sent.rsplit(" ", 1)[1]
+        assert link.startswith("https://seeds.example.ru/api/snapshots/")
+
+        phone = browser(app, OUTSIDE)  # приложение ntfy: из интернета, без входа на сайт
+        photo = phone.get(link.removeprefix("https://seeds.example.ru"))
+        assert photo.status_code == 200 and photo.content == jpeg
+        assert photo.headers["content-type"] == "image/jpeg"
+        assert photo.headers.get_list("cross-origin-resource-policy") == ["cross-origin"]  # и в ntfy.sh/app
+        assert phone.get("/api/health").headers["cross-origin-resource-policy"] == "same-origin"  # остальное — нет
+        uid = link.split("/")[-1].split(".")[0]
+        assert phone.get(f"/api/snapshots/{uid}.jpg", params={"k": "0" * 32}).status_code == 404
+        assert phone.get(f"/api/snapshots/{uid}.jpg").status_code == 404
+        assert phone.get(f"/api/snapshots/{'0' * 32}.jpg", params={"k": "0" * 32}).status_code == 404
+    finally:
+        sup.stop()
+
+    # без адреса сайта снаружи — как раньше: снимок файлом в уведомлении
+    event = SeedsLevelChanged(camera="Дробилка 1", level="empty", previous="ok", duration_s=60, snapshot=b"jpeg")
+    local = Supervisor(store, tmp_path / "local")
+    local.events.record(event)
+    notification = local._format(event)
+    assert notification.image == b"jpeg" and notification.image_url is None
+    local.events.close()
 
 
 def test_client_registers_by_one_time_link_and_sees_only_monitoring(site):
