@@ -80,6 +80,12 @@ def defaults(spec: CrusherSpec) -> Crusher:
                    seeds=SeedsConfig(zones=list(spec.zones), samples=list(spec.samples)))
 
 
+def _known_builtin(spec: CrusherSpec, ids: list[str] | None) -> list[str]:
+    """Убранные вшитые эталоны без повторов и без id, которых в программе уже нет (после обновления)."""
+    builtin_ids = {s.id for s in spec.samples}
+    return [i for i in dict.fromkeys(ids or []) if i in builtin_ids]
+
+
 def split(crusher: Crusher, spec: CrusherSpec) -> tuple[dict, dict]:
     """settings.json (только отличия от программы, без паролей) и secrets.json."""
     base = defaults(spec)
@@ -93,6 +99,7 @@ def split(crusher: Crusher, spec: CrusherSpec) -> tuple[dict, dict]:
     seeds = _dump(crusher.seeds)
     seeds.pop("zones")
     seeds["samples"] = [s for s in seeds["samples"] if not s["builtin"]]
+    seeds["removed_builtin"] = _known_builtin(spec, seeds.get("removed_builtin"))
     public = {"format": FORMAT, "enabled": crusher.enabled, "notify": crusher.notify,
               "camera": _changed(camera, _dump(base.camera)),
               "seeds": _changed(seeds, {**_dump(base.seeds), "samples": []}) | {"samples": seeds["samples"]},
@@ -101,7 +108,8 @@ def split(crusher: Crusher, spec: CrusherSpec) -> tuple[dict, dict]:
 
 
 def join(spec: CrusherSpec, public: dict | None, secrets: dict | None) -> Crusher:
-    """Вшитое описание + settings.json + secrets.json. Имя, зоны и вшитые эталоны — всегда из программы."""
+    """Вшитое описание + settings.json + secrets.json. Имя, зоны и вшитые эталоны — всегда из программы,
+    кроме вшитых эталонов, убранных на месте (seeds.removed_builtin)."""
     public, secrets = public or {}, secrets or {}
     if public.get("format", FORMAT) > FORMAT:
         raise ValueError("Настройки сохранены более новой версией track-seeds — обновите программу")
@@ -110,7 +118,8 @@ def join(spec: CrusherSpec, public: dict | None, secrets: dict | None) -> Crushe
     camera["password"] = secrets.get("camera_password") or None
     seeds = base["seeds"] | {k: v for k, v in (public.get("seeds") or {}).items() if k not in ("zones", "samples")}
     builtin_ids = {s.id for s in spec.samples}
-    seeds["samples"] = base["seeds"]["samples"] + [
+    removed = seeds["removed_builtin"] = _known_builtin(spec, seeds.get("removed_builtin"))
+    seeds["samples"] = [s for s in base["seeds"]["samples"] if s["id"] not in removed] + [
         dict(s, builtin=False) for s in (public.get("seeds") or {}).get("samples", []) if s.get("id") not in builtin_ids]
     passwords = secrets.get("speakers") or {}
     speakers = [dict(s, password=passwords.get(s.get("id")) or s.get("password")) for s in public.get("speakers") or []]

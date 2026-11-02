@@ -182,7 +182,7 @@ class SeedSample(BaseModel):
     image: str  # путь к кадру относительно папки дробилки (вшитые — относительно builtin/<id>/)
     ts: float
     labels: dict[str, Literal["full", "empty"]]  # id зоны → есть семена / пусто
-    builtin: bool = False  # вшит в программу: не удаляется и не переотмечается из интерфейса
+    builtin: bool = False  # вшит в программу: не переотмечается; удаление — в SeedsConfig.removed_builtin
 
 
 class SeedsConfig(BaseModel):
@@ -248,6 +248,7 @@ class SeedsConfig(BaseModel):
 
     zones: list[SeedZone] = []
     samples: list[SeedSample] = []
+    removed_builtin: list[str] = []  # id вшитых эталонов, убранных на месте (вернуть — очистить список)
 
     @field_validator("voice_hours")
     @classmethod

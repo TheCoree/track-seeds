@@ -164,7 +164,8 @@ def cmd_crushers(settings: Settings, args: argparse.Namespace) -> int:
         state = "" if crusher.enabled else " [наблюдение выключено]"
         print(f"{crusher.id:<14} {crusher.name}{state} — {mask_url(crusher.camera.url)}")
         print(f"{'':<14} зоны: {', '.join(z.name for z in crusher.seeds.zones)}; эталонов {len(samples)} "
-              f"({full} есть / {empty} пусто, снятых на месте {own}); динамики: {speakers}; "
+              f"({full} есть / {empty} пусто, снятых на месте {own}"
+              f"{f', убрано вшитых {len(crusher.seeds.removed_builtin)}' if crusher.seeds.removed_builtin else ''}); динамики: {speakers}; "
               f"пароль камеры: {'есть' if crusher.camera.password else 'НЕТ — track-seeds password ' + crusher.id}")
         if error := store.errors.get(crusher.id):
             print(f"{'':<14} ✗ настройки не прочитались, работает с настройками из программы: {error}")

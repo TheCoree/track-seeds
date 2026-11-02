@@ -154,6 +154,27 @@ def test_local_settings_keep_passwords_apart_and_only_changes(tmp_path):
     assert [s.id for s in crusher.seeds.samples] == ["b1"] and crusher.seeds.samples[0].builtin
 
 
+def test_removed_builtin_samples(tmp_path):
+    """Убранные вшитые эталоны хранятся списком id; id, которых в программе больше нет, отбрасываются."""
+    spec = make_spec(tmp_path, "x.mp4")
+    store = new_store(tmp_path / "config", spec)
+
+    def change(c):
+        c.seeds.removed_builtin = ["b1", "b1", "gone"]
+
+    crusher = store.update("drobilka-1", change)
+    assert crusher.seeds.samples == [] and crusher.seeds.removed_builtin == ["b1"]
+    again = ConfigStore(tmp_path / "config", [spec])
+    again.load()
+    assert again.crusher("drobilka-1").seeds.samples == []
+    data = json.loads((store.crusher_dir("drobilka-1") / "settings.json").read_text())
+    assert data["seeds"]["removed_builtin"] == ["b1"]
+
+    store.update("drobilka-1", lambda c: setattr(c.seeds, "removed_builtin", []))
+    data = json.loads((store.crusher_dir("drobilka-1") / "settings.json").read_text())
+    assert "removed_builtin" not in data["seeds"]  # пустой список — как в программе, не пишется
+
+
 def test_name_and_zones_stay_as_in_program(tmp_path):
     spec = make_spec(tmp_path, "x.mp4")
     store = new_store(tmp_path / "config", spec)
@@ -223,14 +244,13 @@ def test_crusher_api(crusher_api, tmp_path):
     speaker = saved["speakers"][0]
     assert speaker["password"] is None and speaker["has_password"] and saved["camera"]["has_password"]
 
-    # эталоны: свой — снять, переотметить, удалить; вшитый — только показать
+    # эталоны: свой — снять, переотметить, удалить; вшитый — показать, убрать и вернуть (но не переотметить)
     wait_for(lambda: api.get("/api/crushers/drobilka-1/frame.jpg").status_code == 200)  # пароль сменили — переподключение
     own = api.post("/api/crushers/drobilka-1/samples", json={"labels": {"z1": "full", "d": "full"}}).json()
     assert own["labels"] == {"z1": "full"} and not own["builtin"]  # привод без эталонов
     for sample_id in ("b1", own["id"]):
         assert api.get(f"/api/crushers/drobilka-1/samples/{sample_id}.jpg").headers["content-type"] == "image/jpeg"
     assert api.patch(f"/api/crushers/drobilka-1/samples/{own['id']}", json={"labels": {"z1": "empty"}}).json()["ok"]
-    assert api.delete("/api/crushers/drobilka-1/samples/b1").status_code == 409
     assert api.patch("/api/crushers/drobilka-1/samples/b1", json={"labels": {"z1": "empty"}}).status_code == 409
     assert api.delete("/api/crushers/drobilka-1/samples/nope").status_code == 404
 
@@ -254,6 +274,24 @@ def test_crusher_api(crusher_api, tmp_path):
     assert [s["id"] for s in saved["seeds"]["samples"]] == ["b1", upload["id"]]
     secrets = json.loads((tmp_path / "config/crushers/drobilka-1/secrets.json").read_text())
     assert secrets["camera_password"] == "p@ss" and list(secrets["speakers"].values()) == ["spw"]
+
+    # вшитый эталон убирается из сравнения, файл программы остаётся; устаревшая форма его не возвращает
+    assert api.delete("/api/crushers/drobilka-1/samples/b1").json()["ok"]
+    assert (tmp_path / "builtin/drobilka-1/samples/b1.jpg").is_file()
+    current = api.get("/api/crushers/drobilka-1").json()
+    assert [s["id"] for s in current["seeds"]["samples"]] == [upload["id"]] and current["seeds"]["removed_builtin"] == ["b1"]
+    public = json.loads((tmp_path / "config/crushers/drobilka-1/settings.json").read_text())
+    assert public["seeds"]["removed_builtin"] == ["b1"] and public["seeds"]["samples"][0]["id"] == upload["id"]
+    assert api.get("/api/crushers/drobilka-1/samples/b1.jpg").status_code == 404
+    assert api.delete("/api/crushers/drobilka-1/samples/b1").status_code == 404
+    saved = api.put("/api/crushers/drobilka-1", json=body_of(saved, seeds=saved["seeds"] | {"removed_builtin": []})).json()
+    assert saved["seeds"]["removed_builtin"] == ["b1"]
+    wait_for(lambda: ((api.get("/api/crushers/drobilka-1").json()["status"].get("seeds") or {}).get("zones") or [{}])[0]
+             .get("samples") == {"full": 0, "empty": 1})
+    assert api.post("/api/crushers/drobilka-1/samples/restore-builtin").json() == {"ok": True, "restored": 1}
+    current = api.get("/api/crushers/drobilka-1").json()
+    assert [s["id"] for s in current["seeds"]["samples"]] == ["b1", upload["id"]] and current["seeds"]["removed_builtin"] == []
+    assert api.post("/api/crushers/drobilka-1/samples/restore-builtin").json()["restored"] == 0
 
     assert api.put("/api/crushers/drobilka-1", json=body_of(saved, camera={"url": ""})).status_code == 422
     assert api.get("/api/crushers/nope").status_code == 404

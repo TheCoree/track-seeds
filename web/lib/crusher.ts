@@ -4,7 +4,7 @@ import type { Crusher } from "./types";
 /** Тело PUT /crushers/{id}: только то, что меняется на месте (имя и зоны вшиты в программу). */
 export function crusherBody(crusher: Crusher, patch: Partial<Pick<Crusher, "enabled" | "notify" | "camera" | "seeds" | "speakers">> = {}) {
   const next = { ...crusher, ...patch };
-  return { enabled: next.enabled, notify: next.notify, camera: next.camera, seeds: { ...next.seeds, samples: crusher.seeds.samples }, speakers: next.speakers };
+  return { enabled: next.enabled, notify: next.notify, camera: next.camera, seeds: { ...next.seeds, samples: crusher.seeds.samples, removed_builtin: crusher.seeds.removed_builtin }, speakers: next.speakers };
 }
 
 export const saveCrusher = (crusher: Crusher, patch: Parameters<typeof crusherBody>[1]) => api.put<Crusher>(`/crushers/${crusher.id}`, crusherBody(crusher, patch));

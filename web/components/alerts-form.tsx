@@ -43,7 +43,7 @@ export function AlertsForm({ crusher, meta, onSaved }: { crusher: Crusher; meta:
   const hoursId = useId();
   const phraseId = useId();
 
-  const strip = (s: SeedsConfig) => ({ ...s, zones: 0, samples: 0 });
+  const strip = (s: SeedsConfig) => ({ ...s, zones: 0, samples: 0, removed_builtin: 0 });
   const dirty =
     JSON.stringify(strip(settings)) !== JSON.stringify(strip(crusher.seeds)) || JSON.stringify(speakers) !== JSON.stringify(crusher.speakers) || notify !== crusher.notify;
 

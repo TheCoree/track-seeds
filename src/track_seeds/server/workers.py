@@ -444,7 +444,8 @@ class Supervisor:
                 for name in ("enabled", "notify", "camera", "speakers"):
                     setattr(current, name, getattr(crusher, name))
                 current.seeds = crusher.seeds.model_copy(update={"zones": current.seeds.zones,
-                                                                 "samples": current.seeds.samples})
+                                                                 "samples": current.seeds.samples,
+                                                                 "removed_builtin": current.seeds.removed_builtin})
 
             saved = self.store.update(crusher.id, change)
             self._apply(saved)
@@ -508,17 +509,43 @@ class Supervisor:
             self._change_samples(crusher_id, change)
 
     def remove_sample(self, crusher_id: str, sample_id: str) -> None:
+        """Свой эталон удаляется с файлом; вшитый только убирается из сравнения (вернуть — restore_builtin)."""
         with self._lock:
-            self._delete_sample_file(crusher_id, self._own_sample(crusher_id, sample_id))
+            sample = self._sample(crusher_id, sample_id)
+            if sample.builtin:
+                def hide(crusher: Crusher) -> None:
+                    crusher.seeds.removed_builtin = [*crusher.seeds.removed_builtin, sample_id]
+
+                self._apply(self.store.update(crusher_id, hide))
+                return
+            self._delete_sample_file(crusher_id, sample)
             self._change_samples(crusher_id, lambda samples: [s for s in samples if s.id != sample_id])
 
-    def _own_sample(self, crusher_id: str, sample_id: str) -> SeedSample:
+    def restore_builtin(self, crusher_id: str) -> int:
+        """Вернуть все убранные вшитые эталоны; сколько вернули."""
+        with self._lock:
+            crusher = self.store.crusher(crusher_id)
+            if crusher is None:
+                raise KeyError(crusher_id)
+            count = len(crusher.seeds.removed_builtin)
+            if count:
+                def restore(current: Crusher) -> None:
+                    current.seeds.removed_builtin = []
+
+                self._apply(self.store.update(crusher_id, restore))
+            return count
+
+    def _sample(self, crusher_id: str, sample_id: str) -> SeedSample:
         crusher = self.store.crusher(crusher_id)
         sample = next((s for s in crusher.seeds.samples if s.id == sample_id), None) if crusher else None
         if sample is None:
             raise KeyError(sample_id)
+        return sample
+
+    def _own_sample(self, crusher_id: str, sample_id: str) -> SeedSample:
+        sample = self._sample(crusher_id, sample_id)
         if sample.builtin:
-            raise ValueError("Это эталон из программы — его не удалить и не переотметить")
+            raise ValueError("Это эталон из программы — его можно удалить, но не переотметить")
         return sample
 
     def _change_samples(self, crusher_id: str, change) -> None:
