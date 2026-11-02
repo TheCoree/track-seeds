@@ -38,7 +38,7 @@ function CrusherPageInner() {
   const { meta, reloadOverview, overview, isAdmin } = useApp();
   const { data: crusher, error, reload } = usePoll<Crusher>(id ? `/crushers/${id}` : null, 1500);
 
-  if (!id) return <Problem text="Не указана дробилка" />;
+  if (!id) return <Problem text="Не указана мельница" />;
   if (!crusher) return error ? <Problem text={error} /> : <Skeleton className="h-96 rounded-xl" />;
 
   const requested = params.get("tab") as Tab;

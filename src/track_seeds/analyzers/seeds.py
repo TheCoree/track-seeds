@@ -1,12 +1,12 @@
-"""Пресет «Семена в дробилке»: зоны бункера открылись → семена заканчиваются.
+"""Пресет «Семена в мельнице»: зоны бункера открылись → семена заканчиваются.
 
 Человек при настройке рисует на кадре зоны (обычно одну — у дна бункера, где семена
 кончаются последними, и, если нужно, ещё одну повыше — «осталось мало») и отмечает
 эталоны: кадры, где в зоне есть семена и где пусто. Дальше каждый кадр сравнивается
 с эталонами, а решение принимается, только если зона устойчиво пуста empty_after_s секунд.
 
-Зона «привод» (цепь, звёздочка) показывает, работает ли дробилка. Пока привод стоит, о семенах
-не сообщается: у остановленной дробилки и картинка в бункере другая (поток семян замер, лопасть
+Зона «привод» (цепь, звёздочка) показывает, работает ли мельница. Пока привод стоит, о семенах
+не сообщается: у остановленной мельницы и картинка в бункере другая (поток семян замер, лопасть
 остановилась где придётся), и пустой бункер никому не мешает. После запуска наличие семян
 подтверждается заново — по кадрам, снятым в работе.
 """
@@ -115,7 +115,7 @@ def _covered_share(box: tuple[int, int, int, int], people: list[tuple[int, int, 
 class SeedsAnalyzer:
     def __init__(self, settings: SeedsConfig, camera_name: str, samples_dir: Path, detector: Detector | None = None,
                  snapshot_quality: int = 85, builtin_dir: Path | None = None) -> None:
-        """samples_dir — папка, относительно которой записаны пути эталонов (папка дробилки);
+        """samples_dir — папка, относительно которой записаны пути эталонов (папка мельницы);
         builtin_dir — то же для эталонов, вшитых в программу."""
         self.name = "seeds"
         self.interval_s = settings.interval_s
@@ -247,7 +247,7 @@ class SeedsAnalyzer:
         # иначе при короткой задержке «закончились» лопасть, замершая перед зоной, успела бы поднять тревогу.
         still_now = bool(self._drives) and all(z.reading is Reading.UNCOVERED for z in self._drives)
         for zone in self._seeds:
-            if self.running is not False and not still_now:  # кадры остановленной дробилки не в счёт
+            if self.running is not False and not still_now:  # кадры остановленной мельницы не в счёт
                 zone.debounce.update(ts, zone.reading)
             self._remember(zone, ts, self._confidence(zone))
         return self._update_level(frame)
@@ -255,7 +255,7 @@ class SeedsAnalyzer:
     def _mask_people(self, image: np.ndarray, ts: float) -> None:
         """Зона, которую загородил человек, — «не определено». Проверяется, только если кадр может что-то
         изменить: желоб «пусто» или привод не в своём состоянии. Семена есть и привод крутится — детектор не нужен;
-        дробилка стоит — кадры желоба в решение не идут, и пустой желоб в простое детектор не гоняет."""
+        мельница стоит — кадры желоба в решение не идут, и пустой желоб в простое детектор не гоняет."""
         if self._detector is None:
             return
         suspicious = [z for z in self._seeds if z.reading is Reading.UNCOVERED] if self.running is not False else []
@@ -298,7 +298,7 @@ class SeedsAnalyzer:
             s = self._settings
             for zone in self._seeds:
                 zone.debounce = ZoneDebounce(s.empty_after_s, s.refill_after_s, s.agreement)
-        log.info("Дробилка «%s»: %s", self._camera, "работает" if running else "стоит")
+        log.info("Мельница «%s»: %s", self._camera, "работает" if running else "стоит")
         self.running, self.running_since = running, ts
 
     def _read_motion(self, zone: _Zone, image: np.ndarray, ts: float) -> tuple[Reading, str]:

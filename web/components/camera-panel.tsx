@@ -58,7 +58,7 @@ export function CameraPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: (
             </Alert>
           )}
           <SettingsList>
-            <SwitchRow checked={enabled} onChange={setEnabled} label="Следить за дробилкой" hint="Выключенная не подключается к камере и не оповещает — например, на время ремонта" />
+            <SwitchRow checked={enabled} onChange={setEnabled} label="Следить за мельницей" hint="Выключенная не подключается к камере и не оповещает — например, на время ремонта" />
             <SettingRow label="Логин" htmlFor={ids.user}>
               <Input id={ids.user} value={conn.username ?? ""} onChange={(e) => set({ username: e.target.value || null })} />
             </SettingRow>
@@ -132,7 +132,7 @@ export function CameraPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: (
         {crusher.config_error && (
           <Alert variant="destructive">
             <CircleAlert />
-            <AlertTitle>Настройки этой дробилки не прочитались</AlertTitle>
+            <AlertTitle>Настройки этой мельницы не прочитались</AlertTitle>
             <AlertDescription>Она работает с настройками из программы. {crusher.config_error}</AlertDescription>
           </Alert>
         )}

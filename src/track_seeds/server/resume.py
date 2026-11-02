@@ -1,8 +1,8 @@
-"""Состояние дробилок между перезапусками сервера.
+"""Состояние мельниц между перезапусками сервера.
 
 Обновление прода пересоздаёт контейнер: без этого файла после него было бы «семена есть уже
 1 секунду», хотя до обновления — 2 часа, и первая тревога после запуска шла бы как новая.
-Раз в 5 секунд и при остановке сервер записывает, что знает о каждой дробилке (уровень, работает ли,
+Раз в 5 секунд и при остановке сервер записывает, что знает о каждой мельнице (уровень, работает ли,
 с какого времени), в DATA_DIR/resume.json; при запуске анализ продолжает с этого, если перерыв
 короткий (analyzers.seeds.RESUME_MAX_GAP_S).
 """
@@ -31,7 +31,7 @@ class ResumeFile:
         self._lock = threading.Lock()
 
     def load(self) -> Snapshots:
-        """Дробилка → её состояние. Нет файла или он испорчен — начинаем с нуля (это не ошибка работы)."""
+        """Мельница → её состояние. Нет файла или он испорчен — начинаем с нуля (это не ошибка работы)."""
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -51,7 +51,7 @@ class ResumeFile:
                 write_atomic(self.path, text, backup=False)
                 self._written = text
             except OSError as e:
-                log.warning("Состояние дробилок не записалось: %s", e)
+                log.warning("Состояние мельниц не записалось: %s", e)
 
     def start(self, collect: Callable[[], Snapshots]) -> None:
         def loop() -> None:
@@ -59,7 +59,7 @@ class ResumeFile:
                 try:
                     self.save(collect())
                 except Exception:
-                    log.exception("Состояние дробилок не записалось")
+                    log.exception("Состояние мельниц не записалось")
 
         self._stop.clear()
         self._thread = threading.Thread(target=loop, name="resume", daemon=True)

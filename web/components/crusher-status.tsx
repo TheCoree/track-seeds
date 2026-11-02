@@ -51,7 +51,7 @@ function state(tone: Tone, title: string, short: string, Icon: LucideIcon, extra
   return { tone, title, short, Icon, dot: TONE_DOT[tone], ...extra };
 }
 
-/** Что показать о дробилке одной строкой: связь, ошибка или уровень семян. */
+/** Что показать о мельнице одной строкой: связь, ошибка или уровень семян. */
 export function crusherState(c: CrusherView): CrusherState {
   const st = c.status;
   if (!c.enabled) return state("gray", "Наблюдение выключено", "выключена", PowerOff);
@@ -110,10 +110,10 @@ export function LevelHero({ crusher, now }: { crusher: CrusherView; now: number 
         <div className="mt-3 flex items-center gap-2 border-t border-white/20 pt-3 text-sm">
           <Activity className={cn("size-4", seeds?.running && "animate-pulse")} />
           {seeds?.running === true
-            ? `Дробилка работает${seeds.running_since ? ` · ${duration(now - seeds.running_since)}` : ""}`
+            ? `Мельница работает${seeds.running_since ? ` · ${duration(now - seeds.running_since)}` : ""}`
             : seeds?.running === false
-              ? "Дробилка стоит"
-              : "Работает ли дробилка — определяется"}
+              ? "Мельница стоит"
+              : "Работает ли мельница — определяется"}
         </div>
       )}
     </div>

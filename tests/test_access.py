@@ -97,7 +97,7 @@ def test_notification_snapshot_is_a_signed_link_to_the_site(tmp_path, video, cap
     try:
         app = create_app(sup, None, ADMIN_PW, allowed_networks=["0.0.0.0/0", "::/0"], admin_networks=LOCAL_NETWORKS)
         caplog.set_level(logging.WARNING, "track_seeds.notify")
-        sup.bus.publish(SeedsLevelChanged(camera="Дробилка 1", camera_id="drobilka-1", level="empty", previous="ok",
+        sup.bus.publish(SeedsLevelChanged(camera="Мельница 1", camera_id="drobilka-1", level="empty", previous="ok",
                                           duration_s=60, snapshot=jpeg))
         sent = wait_for(lambda: next((r.getMessage() for r in caplog.records
                                       if "закончились семена" in r.getMessage()), None))
@@ -118,7 +118,7 @@ def test_notification_snapshot_is_a_signed_link_to_the_site(tmp_path, video, cap
         sup.stop()
 
     # без адреса сайта снаружи — как раньше: снимок файлом в уведомлении
-    event = SeedsLevelChanged(camera="Дробилка 1", level="empty", previous="ok", duration_s=60, snapshot=b"jpeg")
+    event = SeedsLevelChanged(camera="Мельница 1", level="empty", previous="ok", duration_s=60, snapshot=b"jpeg")
     local = Supervisor(store, tmp_path / "local")
     local.events.record(event)
     notification = local._format(event)
@@ -144,7 +144,7 @@ def test_client_registers_by_one_time_link_and_sees_only_monitoring(site):
 
     overview = phone.get("/api/overview").json()
     crusher = overview["crushers"][0]
-    assert crusher["name"] == "Дробилка 1" and crusher["seeds"]["zones"]
+    assert crusher["name"] == "Мельница 1" and crusher["seeds"]["zones"]
     for hidden in ("camera", "speakers", "folder", "builtin_camera_url"):
         assert hidden not in crusher
     assert "notify_error" not in overview
@@ -156,7 +156,7 @@ def test_client_registers_by_one_time_link_and_sees_only_monitoring(site):
 
     # проверка оповещений разработчиком клиенту не видна, доставка уведомлений — тоже
     admin.post("/api/crushers/drobilka-1/test-alarm").raise_for_status()
-    sup.bus.publish(SeedsLevelChanged(camera="Дробилка 1", camera_id="drobilka-1", level="stopped", previous="ok",
+    sup.bus.publish(SeedsLevelChanged(camera="Мельница 1", camera_id="drobilka-1", level="stopped", previous="ok",
                                       duration_s=60))
     wait_for(lambda: len(admin.get("/api/events").json()) >= 2)
     events = phone.get("/api/events").json()
@@ -175,7 +175,7 @@ def test_developer_panel_only_from_local_network(site):
     response = outside.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PW})
     assert response.status_code == 401 and time.monotonic() - started >= 0.9  # пароль даже не проверяется
     assert not outside.get("/api/auth/info").json()["admin_here"]
-    assert outside.get("/api/health").json() == {"ok": True}  # подробности о дробилках — только своим
+    assert outside.get("/api/health").json() == {"ok": True}  # подробности о мельницах — только своим
 
     # за обратным прокси на этом же сервере адрес посетителя — из X-Forwarded-For
     proxied = TestClient(app, headers=CSRF | {"X-Forwarded-For": "8.8.8.8", "X-Forwarded-Proto": "https"},
@@ -329,7 +329,7 @@ def test_widget_key_reads_status_only(site):
     widget = browser(app, OUTSIDE, {"Authorization": f"Bearer {token}"})
     data = wait_for(lambda: (d := widget.get("/api/widget").json())["crushers"][0]["state"] and d)
     crusher = data["crushers"][0]
-    assert crusher["name"] == "Дробилка 1" and crusher["label"] and set(crusher["today"]) >= {"running", "stopped"}
+    assert crusher["name"] == "Мельница 1" and crusher["label"] and set(crusher["today"]) >= {"running", "stopped"}
     assert widget.get("/api/widget/drobilka-1.jpg").headers["content-type"] == "image/jpeg"
     for path in ("/api/overview", "/api/auth/me", "/api/events", "/api/meta"):
         assert widget.get(path).status_code == 401, path
@@ -435,7 +435,7 @@ def test_report_counts_work_stops_and_gaps(tmp_path):
     run("running", 130.1, 140)
     run("stopped", 200, 260)  # 11:20–12:20 стоит после разрыва (сервер выключали) — не новая остановка
     now = base + 260 * 60
-    day = report(log, [("d1", "Дробилка 1")], "day", date(2026, 10, 30), now)["crushers"][0]
+    day = report(log, [("d1", "Мельница 1")], "day", date(2026, 10, 30), now)["crushers"][0]
     hours = {k: round(v / 60) for k, v in day["totals"].items()}
     assert hours == {"running": 100, "idle": 10, "stopped": 90, "offline": 0, "unknown": 0,
                      "nodata": 8 * 60 + 60}  # до 08:00 и разрыв 10:20–11:20
@@ -446,7 +446,7 @@ def test_report_counts_work_stops_and_gaps(tmp_path):
     assert round(day["buckets"][8]["running"] / 60) == 60 and round(day["buckets"][9]["stopped"] / 60) == 30
     assert [s for s, *_ in day["timeline"]] == ["running", "stopped", "running", "idle", "running", "stopped"]
 
-    week = report(log, [("d1", "Дробилка 1")], "week", date(2026, 10, 30), now)
+    week = report(log, [("d1", "Мельница 1")], "week", date(2026, 10, 30), now)
     assert len(week["crushers"][0]["buckets"]) == 7 and week["next"] is None
     assert round(week["crushers"][0]["buckets"][4]["running"] / 60) == 100  # пятница
     assert report(log, [("d1", "Д")], "month", date(2026, 10, 1), now)["prev"] == "2026-09-01"

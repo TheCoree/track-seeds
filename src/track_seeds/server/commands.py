@@ -1,4 +1,4 @@
-"""Команды для сервера без рабочего стола: запуск, дробилки, пароль камеры, проверка, голос — всё из консоли."""
+"""Команды для сервера без рабочего стола: запуск, мельницы, пароль камеры, проверка, голос — всё из консоли."""
 
 import argparse
 import getpass
@@ -45,7 +45,7 @@ def open_store(settings: Settings, create: bool = True) -> ConfigStore:
     for line in moved:
         log.info("Перенесено: %s", line)
     for crusher_id, error in store.errors.items():
-        log.error("Настройки дробилки %s не прочитались: %s", crusher_id, error)
+        log.error("Настройки мельницы %s не прочитались: %s", crusher_id, error)
     return store
 
 
@@ -84,7 +84,7 @@ def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
                          public_url=web.public_url, accounts=accounts)
     except AuthError as e:
         sys.exit(f"WEB_PASSWORD в .env: {e}")
-    log.info("Дробилки: %s; настройки на месте — %s", ", ".join(c.name for c in store.ordered()),
+    log.info("Мельницы: %s; настройки на месте — %s", ", ".join(c.name for c in store.ordered()),
              store.crushers_dir.resolve())
     log.info("Веб-интерфейс: http://%s:%d/%s", "127.0.0.1" if host == "0.0.0.0" else host, port,
              "" if (static_dir / "index.html").is_file() else "  (фронтенд не собран: make web)")
@@ -174,11 +174,11 @@ def cmd_crushers(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_password(settings: Settings, args: argparse.Namespace) -> int:
-    """Пароль камеры дробилки — на сервере без браузера (в Docker: docker compose run --rm -it …)."""
+    """Пароль камеры мельницы — на сервере без браузера (в Docker: docker compose run --rm -it …)."""
     store = open_store(settings)
     ids = [args.id] if args.id else list(store.crushers)
     if args.id and args.id not in store.crushers:
-        sys.exit(f"Нет дробилки {args.id} (есть: {', '.join(store.crushers)})")
+        sys.exit(f"Нет мельницы {args.id} (есть: {', '.join(store.crushers)})")
     if not sys.stdin.isatty():
         sys.exit("Пароль спрашивается в терминале — запустите команду интерактивно (в Docker — с ключом -it)")
     password = getpass.getpass(f"Пароль камер ({', '.join(store.crushers[i].name for i in ids)}): ")
@@ -201,10 +201,10 @@ def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
     store = open_store(settings, create=False)
     crushers = [store.crushers[args.id]] if args.id in store.crushers else store.ordered()
     if args.id and args.id not in store.crushers:
-        sys.exit(f"Нет дробилки {args.id} (есть: {', '.join(store.crushers)})")
+        sys.exit(f"Нет мельницы {args.id} (есть: {', '.join(store.crushers)})")
     problems = len(store.errors)
     for crusher_id, error in store.errors.items():
-        print(f"✗ Настройки дробилки {crusher_id} не прочитались — она работает с настройками из программы: {error}")
+        print(f"✗ Настройки мельницы {crusher_id} не прочитались — она работает с настройками из программы: {error}")
     reasons = {"no_samples": "нет эталонов", "dark": "темно", "novel": "не похоже на эталоны", "border": "на границе",
                "people": "закрыта человеком"}
     for crusher in crushers:
@@ -237,7 +237,7 @@ def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
                     if drive["motion"] is None:
                         print(f"  ! привод «{drive['name']}»: не определить (темно)")
                     else:
-                        state = "крутится — дробилка работает" if drive["moving"] else "неподвижен — дробилка стоит"
+                        state = "крутится — мельница работает" if drive["moving"] else "неподвижен — мельница стоит"
                         print(f"  ✓ привод «{drive['name']}»: {state} (за пробу изменилось {drive['motion']:.0%})")
             elif any(z.kind == "motion" for z in crusher.seeds.zones):
                 print("  ! привод: один кадр — движение не оценить")
@@ -275,13 +275,13 @@ def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_say(settings: Settings, args: argparse.Namespace) -> int:
-    """Сказать фразу на динамиках дробилки — проверить звук на сервере без браузера."""
+    """Сказать фразу на динамиках мельницы — проверить звук на сервере без браузера."""
     from ..voice import SpeakerError, Synthesizer, build_speaker, compose
 
     store = open_store(settings, create=False)
     crusher = store.crushers.get(args.crusher)
     if crusher is None:
-        sys.exit(f"Нет дробилки {args.crusher} (есть: {', '.join(store.crushers)})")
+        sys.exit(f"Нет мельницы {args.crusher} (есть: {', '.join(store.crushers)})")
     speakers = [s for s in crusher.speakers if not args.speaker or s.name == args.speaker]
     if not speakers:
         sys.exit(f"У «{crusher.name}» нет такого динамика")
@@ -301,7 +301,7 @@ def cmd_say(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def add_commands(sub) -> None:
-    p = sub.add_parser("serve", help="сервер: обе дробилки + веб-интерфейс")
+    p = sub.add_parser("serve", help="сервер: обе мельницы + веб-интерфейс")
     p.add_argument("--host", help="адрес (WEB_HOST, по умолчанию 127.0.0.1; другой — только с WEB_PASSWORD)")
     p.add_argument("--port", type=int, help="порт (WEB_PORT, по умолчанию 8080)")
     p.set_defaults(func=cmd_serve)
@@ -314,18 +314,18 @@ def add_commands(sub) -> None:
     p = sub.add_parser("users", help="аккаунты веб-интерфейса: разработчики и клиенты")
     p.set_defaults(func=cmd_users)
 
-    p = sub.add_parser("crushers", help="дробилки: камеры, зоны, эталоны, динамики")
+    p = sub.add_parser("crushers", help="мельницы: камеры, зоны, эталоны, динамики")
     p.set_defaults(func=cmd_crushers)
 
-    p = sub.add_parser("password", help="задать пароль камеры дробилки (спросит в терминале)")
-    p.add_argument("id", nargs="?", help="одна дробилка (по умолчанию — один пароль для всех)")
+    p = sub.add_parser("password", help="задать пароль камеры мельницы (спросит в терминале)")
+    p.add_argument("id", nargs="?", help="одна мельница (по умолчанию — один пароль для всех)")
     p.set_defaults(func=cmd_password)
 
     p = sub.add_parser("check", help="проверить без браузера: камеры, зоны, динамики, голос, уведомления")
-    p.add_argument("id", nargs="?", help="одна дробилка (по умолчанию все)")
+    p.add_argument("id", nargs="?", help="одна мельница (по умолчанию все)")
     p.set_defaults(func=cmd_check)
 
-    p = sub.add_parser("say", help="сказать фразу на динамиках дробилки")
+    p = sub.add_parser("say", help="сказать фразу на динамиках мельницы")
     p.add_argument("text")
     p.add_argument("--crusher", required=True, help="drobilka-1 или drobilka-2")
     p.add_argument("--speaker", help="только этот динамик (по названию)")

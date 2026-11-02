@@ -1,4 +1,4 @@
-# Прод-образ для сервера: обе дробилки с зонами и эталонами вшиты в программу.
+# Прод-образ для сервера: обе мельницы с зонами и эталонами вшиты в программу.
 
 # 1. Фронтенд: статический экспорт Next.js
 FROM node:24-slim AS web
@@ -34,10 +34,11 @@ RUN pip install .
 
 # Голос и модель детектора людей — в образе: сервер работает без интернета. Голос — тот, что выбран
 # в «Уведомления и голос» (config/settings.json); другой — docker compose build --build-arg VOICE=…
+# Все голоса vosk-* — одна модель (~450 МБ после сжатия BERT); ru_RU-* — голоса piper (~60 МБ).
 # Детектор людей — чтобы рука рабочего в желобе не считалась пустым желобом.
 # Голос — вне томов, чтобы обновлялся вместе с образом.
 ARG DETECTOR_MODEL=yolox_tiny
-ARG VOICE=ru_RU-denis-medium
+ARG VOICE=vosk-male-1
 ENV VOICES_DIR=/app/voices
 RUN track-seeds --env-file /dev/null download-model ${DETECTOR_MODEL} --voice ${VOICE} \
     && mkdir -p /app/config /app/data \

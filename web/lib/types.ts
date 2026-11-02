@@ -38,7 +38,7 @@ export interface SeedsStatus {
   level: Level | null;
   level_since: number | null;
   last_known: Level | null;
-  /** работает ли дробилка (по зоне привода); null — ещё не определено */
+  /** работает ли мельница (по зоне привода); null — ещё не определено */
   running: boolean | null;
   running_since: number | null;
   /** гистерезис в единицах уверенности */
@@ -103,7 +103,7 @@ export interface CameraConn {
   [key: string]: unknown;
 }
 
-/** Дробилка, как её видит клиент: состояние и зоны, без адресов камер, паролей и динамиков. */
+/** Мельница, как её видит клиент: состояние и зоны, без адресов камер, паролей и динамиков. */
 export interface CrusherView {
   id: string;
   name: string;
@@ -112,7 +112,7 @@ export interface CrusherView {
   status: CrusherStatus;
 }
 
-/** Дробилка для разработчика: камера, зоны и вшитые эталоны — из программы, остальное — настройки на месте. */
+/** Мельница для разработчика: камера, зоны и вшитые эталоны — из программы, остальное — настройки на месте. */
 export interface Crusher extends CrusherView {
   notify: boolean;
   camera: CameraConn;
@@ -179,7 +179,7 @@ export interface JsonSchema {
 export interface Meta {
   schemas: Record<string, JsonSchema>;
   voices: Record<string, string>;
-  engines: { piper: boolean; espeak: boolean };
+  engines: { vosk: boolean; piper: boolean; espeak: boolean };
   channels: string[];
   /** заведён ли разработчик (вход по паролю) */
   auth: boolean;

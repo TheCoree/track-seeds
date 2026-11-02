@@ -74,7 +74,7 @@ def test_wav_roundtrip():
 # --- что и когда говорить ---
 
 def seeds_event(level: str, previous: str | None = "ok", reminder: int = 0, **kw) -> SeedsLevelChanged:
-    return SeedsLevelChanged(camera="Дробилка", camera_id="cam", level=level, previous=previous, duration_s=60,
+    return SeedsLevelChanged(camera="Мельница", camera_id="cam", level=level, previous=previous, duration_s=60,
                              reminder=reminder, **kw)
 
 
@@ -291,7 +291,7 @@ def test_hikvision_without_password_never_contacts_camera(camera):
 
 
 def test_one_speaker_in_two_presets_plays_one_phrase_at_a_time(camera):
-    """Обе дробилки говорят в одну камеру в комнате отдыха — сессии идут по очереди, а не вместе."""
+    """Обе мельницы говорят в одну камеру в комнате отдыха — сессии идут по очереди, а не вместе."""
     first, second = speaker_for(camera), speaker_for(camera)  # два пресета, один и тот же динамик
     errors = []
 
@@ -311,3 +311,115 @@ def test_one_speaker_in_two_presets_plays_one_phrase_at_a_time(camera):
     # open → audioData → close одной сессии, затем другой — без перекрытия
     sessions = [x for x in paths if x in ("/open", "/close")]
     assert sessions == ["/open", "/close", "/open", "/close"]
+
+
+# --- Vosk: текст, словарь ударений, скачивание, выбор движка ---
+
+def test_numbers_are_read_as_words():
+    from track_seeds.voice.vosk import number_words, prepare_text
+
+    assert [number_words(n) for n in (0, 2, 12, 21, 40, 105, 1000, 2005, 11000, 22101)] == [
+        "ноль", "два", "двенадцать", "двадцать один", "сорок", "сто пять", "одна тысяча", "две тысячи пять",
+        "одиннадцать тысяч", "двадцать две тысячи сто один"]
+    assert prepare_text("Мельница 2, стоит 15 минут (cam)!") == "Мельница два, стоит пятнадцать минут ()!"
+
+
+def test_stress_dictionary_lookup(tmp_path):
+    from track_seeds.voice.vosk import lookup
+
+    dictionary = tmp_path / "dictionary"
+    dictionary.write_text("семена 0.09 sj e0 mj e1 n a0\nсемена 1 sj e0 mj e0 n a1\nсеменами 1 x\n"
+                          "мельнице 1 mj e1 lj nj i0 c e0\n", encoding="utf-8")
+    found = lookup(dictionary, "В мельнице закончились семена, сем+ена. Жёлоб, дом!")
+    assert found["семена"] == "sj e0 mj e0 n a1"  # самый частый вариант: семена́
+    assert found["мельнице"] == "mj e1 lj nj i0 c e0"
+    assert "o1" in found["жёлоб"] and "o1" in found["дом"]  # нет в словаре: ударение на «ё» / единственную гласную
+    assert "закончились" not in found and "сем+ена" not in found and "семенами" not in found
+
+
+def test_engine_follows_the_chosen_voice(tmp_path, monkeypatch):
+    from track_seeds.voice import Synthesizer, tts
+
+    monkeypatch.setattr(tts, "espeak_installed", lambda: True)
+    monkeypatch.setattr(tts, "piper_installed", lambda: True)
+    monkeypatch.setattr(tts, "vosk_installed", lambda: True)
+
+    def engine(**kw) -> str:
+        return Synthesizer(VoiceConfig(**kw), tmp_path, tmp_path / "cache").engine
+
+    assert engine() == "vosk" and engine(voice="ru_RU-denis-medium") == "piper"
+    assert engine(engine="espeak") == "espeak"
+    assert VoiceConfig(engine="piper").engine == "auto"  # старые настройки читаются
+    monkeypatch.setattr(tts, "vosk_installed", lambda: False)
+    assert engine() == "espeak"
+
+
+@pytest.fixture
+def model_server() -> Iterator[dict[str, bytes]]:
+    files: dict[str, bytes] = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            body = files.get(self.path.lstrip("/"))
+            self.send_response(200 if body is not None else 404)
+            self.send_header("Content-Length", str(len(body or b"")))
+            self.end_headers()
+            self.wfile.write(body or b"")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    files["_url"] = f"http://127.0.0.1:{server.server_port}/{{}}".encode()
+    yield files
+    server.shutdown()
+
+
+def test_vosk_download_checks_hashes_and_compresses_bert(tmp_path, monkeypatch, model_server):
+    from hashlib import sha256
+
+    from track_seeds.voice import download_voice, vosk
+
+    names = ["config.json", "bert/vocab.txt", "dictionary", "model.onnx", "bert/model.onnx"]
+    model_server.update({name: f"<{name}>".encode() for name in names})
+    monkeypatch.setattr(vosk, "_URL", model_server["_url"].decode())
+    monkeypatch.setattr(vosk, "_FILES", {name: sha256(f"<{name}>".encode()).hexdigest() for name in names})
+    quantized = []
+    monkeypatch.setattr(vosk, "_quantize", lambda src, dst: (quantized.append(src.read_bytes()),
+                                                             dst.write_bytes(b"int8")))
+    monkeypatch.setenv("VOICES_DIR", str(tmp_path / "voices"))
+
+    model_server["dictionary"] = b"tampered"
+    with pytest.raises(RuntimeError, match="dictionary скачался повреждённым"):
+        download_voice("vosk-female-2", tmp_path / "models")
+    assert not (tmp_path / "voices" / vosk.MODEL / "dictionary").exists()
+
+    model_server["dictionary"] = b"<dictionary>"
+    root = download_voice("vosk-female-2", tmp_path / "models")
+    assert root == tmp_path / "voices" / vosk.MODEL and vosk.downloaded(tmp_path / "voices")
+    assert quantized == [b"<bert/model.onnx>"] and not (root / "bert/model.onnx").exists()
+    model_server.clear()  # всё уже есть — сеть не нужна
+    assert download_voice("vosk-male-1", tmp_path / "models") == root
+
+
+def test_vosk_speaks_and_unloads_when_idle(monkeypatch):
+    """С настоящей моделью — если она скачана (models/voices); в CI без неё пропускается."""
+    from pathlib import Path
+
+    from track_seeds.voice import vosk
+
+    root = Path("models/voices") / vosk.MODEL
+    if not vosk.installed() or not vosk.downloaded(root.parent):
+        pytest.skip("модель Vosk не скачана")
+    monkeypatch.setattr(vosk, "IDLE_UNLOAD_S", 0.2)
+    voice = vosk.VoskVoice(root)
+    audio, rate = voice.synthesize("Внимание! Мельница 2 остановилась.", "female_0", 1.0)
+    assert rate == 22050 and 1 < audio.size / rate < 10 and 0.05 < np.max(np.abs(audio)) <= 1
+    assert voice.loaded
+    deadline = time.time() + 5
+    while voice.loaded and time.time() < deadline:
+        time.sleep(0.05)
+    assert not voice.loaded
+    with pytest.raises(ValueError):
+        voice.synthesize("hello 🙂", "female_0", 1.0)

@@ -3,7 +3,7 @@
 Кто что может:
 - разработчик (admin) — всё, но только из WEB_ADMIN_NETWORKS (по умолчанию — локальная сеть),
   даже когда сайт открыт клиентам в интернет;
-- клиент (client) — дробилки в реальном времени, события, отчёты; настроек, паролей и адресов камер не видит;
+- клиент (client) — мельницы в реальном времени, события, отчёты; настроек, паролей и адресов камер не видит;
 - ключ виджета — только /api/widget.
 Каждый маршрут API подключён к одному из роутеров public / viewer / admin — без роутера маршрута нет,
 по умолчанию нужен разработчик.
@@ -53,7 +53,7 @@ from ..config import (
 )
 from ..events import SeedsLevelChanged
 from ..notify import CHANNELS, Notification
-from ..voice import VOICES, SpeakerError, compose, espeak_installed, piper_installed
+from ..voice import VOICES, SpeakerError, compose, espeak_installed, piper_installed, vosk_installed
 from ..voice.audio import wav_bytes
 from . import worklog
 from .auth import (
@@ -158,7 +158,7 @@ _STREAM = _NO_CACHE | {"X-Accel-Buffering": "no"}
 # --- запросы ---
 
 class CrusherIn(BaseModel):
-    """Что можно поменять у дробилки на месте; имя и зоны вшиты в программу."""
+    """Что можно поменять у мельницы на месте; имя и зоны вшиты в программу."""
 
     enabled: bool = True
     notify: bool = True
@@ -169,7 +169,7 @@ class CrusherIn(BaseModel):
 
 class ProbeIn(BaseModel):
     camera: dict[str, Any]
-    crusher_id: str | None = None  # взять сохранённый пароль камеры этой дробилки
+    crusher_id: str | None = None  # взять сохранённый пароль камеры этой мельницы
     seconds: float = 3
 
 
@@ -643,12 +643,12 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
     def auth_log(limit: int = 100) -> list[dict]:
         return accounts.journal(limit)
 
-    # --- дробилки: общее ---
+    # --- мельницы: общее ---
 
     def crusher_or_404(crusher_id: str) -> Crusher:
         crusher = store.crusher(crusher_id)
         if crusher is None:
-            raise HTTPException(404, "Дробилка не найдена")
+            raise HTTPException(404, "Мельница не найдена")
         return crusher
 
     def crusher_status(crusher: Crusher, history: bool) -> dict[str, Any]:
@@ -717,7 +717,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
             "schemas": {"seeds": SeedsConfig.model_json_schema(), "voice": VoiceConfig.model_json_schema(),
                         "notify": NotifyConfig.model_json_schema()},
             "voices": VOICES,
-            "engines": {"piper": piper_installed(), "espeak": espeak_installed()},
+            "engines": {"vosk": vosk_installed(), "piper": piper_installed(), "espeak": espeak_installed()},
             "channels": list(CHANNELS),
             "auth": accounts.has_admin(),
             "config_dir": str(store.root.resolve()),
@@ -807,7 +807,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
                 return Response(status_code=204, headers=_NO_CACHE)
             await asyncio.sleep(0.04)
 
-    # --- дробилки: настройки (разработчик) ---
+    # --- мельницы: настройки (разработчик) ---
 
     @admin_api.put("/api/crushers/{crusher_id}")
     def update(crusher_id: str, body: CrusherIn) -> dict[str, Any]:
@@ -959,7 +959,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
             sup.remove_sample(crusher_id, sample_id)
         return {"ok": True}
 
-    # --- динамики дробилки ---
+    # --- динамики мельницы ---
 
     def speaker_or_404(crusher_id: str, speaker_id: str):
         crusher = crusher_or_404(crusher_id)
@@ -1053,7 +1053,7 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
 
     @widget_api.get("/api/widget")
     def widget() -> dict[str, Any]:
-        """Сводка для виджета на телефоне: состояние каждой дробилки и итоги дня."""
+        """Сводка для виджета на телефоне: состояние каждой мельницы и итоги дня."""
         now = time.time()
         items = []
         for crusher in store.ordered():

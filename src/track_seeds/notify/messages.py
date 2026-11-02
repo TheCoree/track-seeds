@@ -27,7 +27,7 @@ def _clock(ts: float) -> str:
 
 
 LEVEL_NAMES = {"ok": "семена есть", "low": "семян мало", "empty": "семена закончились", "unknown": "не видно",
-               "stopped": "дробилка стоит"}
+               "stopped": "мельница стоит"}
 
 
 def _seeds(e: SeedsLevelChanged) -> Notification:
@@ -62,12 +62,12 @@ def _seeds_text(e: SeedsLevelChanged) -> Notification:
                                 tags=("eyes",), priority="high", image=e.snapshot)
         case "stopped":
             before = f" До остановки — {LEVEL_NAMES[e.previous]}." if e.previous in ("ok", "low", "empty") else ""
-            return Notification(title=f"{e.camera}: дробилка остановилась",
+            return Notification(title=f"{e.camera}: мельница остановилась",
                                 message=f"{_clock(e.ts)} — привод не движется.{before} Пока стоит, о семенах "
                                         f"не сообщается",
                                 tags=("octagonal_sign",), priority="high", image=e.snapshot)
     if e.previous == "stopped":
-        return Notification(title=f"{e.camera}: дробилка снова работает, семена есть",
+        return Notification(title=f"{e.camera}: мельница снова работает, семена есть",
                             message=f"{_clock(e.ts)} — стояла {format_duration(e.duration_s)}",
                             tags=("arrow_forward",), image=e.snapshot)
     if e.previous in ("empty", "low"):

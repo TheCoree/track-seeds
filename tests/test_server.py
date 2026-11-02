@@ -48,11 +48,11 @@ def video(tmp_path: Path) -> Path:
 
 
 def make_spec(tmp_path: Path, url: str, crusher_id: str = "drobilka-1", username: str = "") -> CrusherSpec:
-    """Дробилка, как она была бы вшита в программу: камера — видеофайл, один вшитый эталон «есть»."""
+    """Мельница, как она была бы вшита в программу: камера — видеофайл, один вшитый эталон «есть»."""
     root = tmp_path / "builtin"
     (root / crusher_id / "samples").mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(root / crusher_id / "samples/b1.jpg"), scene(0.95))
-    return CrusherSpec(id=crusher_id, name=f"Дробилка {crusher_id[-1]}", camera_url=url, username=username,
+    return CrusherSpec(id=crusher_id, name=f"Мельница {crusher_id[-1]}", camera_url=url, username=username,
                        zones=(SeedZone(id="z1", name="Дно", kind="empty", points=BOTTOM),
                               SeedZone(id="d", name="Привод", kind="motion", points=DRIVE)),
                        samples=(SeedSample(id="b1", image="samples/b1.jpg", ts=1, labels={"z1": "full"},
@@ -101,11 +101,11 @@ def body_of(crusher: dict, **changes) -> dict:
     return {k: crusher[k] for k in ("enabled", "notify", "camera", "seeds", "speakers")} | changes
 
 
-# --- дробилки предприятия ---
+# --- мельницы предприятия ---
 
 @pytest.mark.parametrize("spec", CRUSHERS, ids=lambda s: s.id)
 def test_real_crusher_recognises_its_own_seeds(spec):
-    """Настоящие эталоны дробилки: модель из трёх кадров узнаёт четвёртый как «семена есть» без сомнений."""
+    """Настоящие эталоны мельницы: модель из трёх кадров узнаёт четвёртый как «семена есть» без сомнений."""
     zones = list(spec.zones)
     assert {z.kind for z in zones} == {"empty", "motion"} and all(0 <= c <= 1 for z in zones for p in z.points for c in p)
     assert len(spec.samples) >= 3 and all((spec.builtin_dir / s.image).is_file() for s in spec.samples)
@@ -184,7 +184,7 @@ def test_name_and_zones_stay_as_in_program(tmp_path):
         c.seeds.zones = []
 
     saved = store.update("drobilka-1", change)
-    assert saved.name == "Дробилка 1" and [z.id for z in saved.seeds.zones] == ["z1", "d"]
+    assert saved.name == "Мельница 1" and [z.id for z in saved.seeds.zones] == ["z1", "d"]
 
 
 def test_broken_local_settings_fall_back_to_program(tmp_path):
@@ -206,7 +206,7 @@ def test_old_presets_are_carried_over(tmp_path):
     cv2.imwrite(str(old / "samples/own.jpg"), scene(0.0))
     cv2.imwrite(str(old / "samples/b1.jpg"), scene(0.95))
     (old / "preset.json").write_text(json.dumps({
-        "format": 1, "name": "Дробилка 1", "enabled": True, "notify": False,
+        "format": 1, "name": "Мельница 1", "enabled": True, "notify": False,
         "camera": {"url": "rtsp://10.0.0.8/101", "username": "admin", "read_timeout_s": 7},
         "seeds": {"zones": [{"id": "old", "name": "Старая", "points": BOTTOM}], "say_empty": "Свои слова",
                   "samples": [{"id": "b1", "image": "samples/b1.jpg", "ts": 1, "labels": {"z1": "full"}},
@@ -229,7 +229,7 @@ def test_old_presets_are_carried_over(tmp_path):
 def test_crusher_api(crusher_api, tmp_path):
     api, _ = crusher_api
     overview = api.get("/api/overview").json()
-    assert [c["name"] for c in overview["crushers"]] == ["Дробилка 1"]
+    assert [c["name"] for c in overview["crushers"]] == ["Мельница 1"]
     crusher = overview["crushers"][0]
     assert crusher["camera"]["password"] is None and crusher["builtin_camera_url"].endswith("hopper.mp4")
     wait_for(lambda: api.get("/api/crushers/drobilka-1/frame.jpg").status_code == 200)
@@ -346,10 +346,10 @@ def test_events_logged_with_speech_and_sample_from_event(crusher_api):
     client.put("/api/crushers/drobilka-1",
                json=body_of(crusher, seeds=crusher["seeds"] | {"say_empty": "Пусто!"})).raise_for_status()
     frame = cv2.imencode(".jpg", scene(0.0))[1].tobytes()
-    sup.bus.publish(SeedsLevelChanged(camera="Дробилка 1", camera_id="drobilka-1", level="empty", previous="ok",
+    sup.bus.publish(SeedsLevelChanged(camera="Мельница 1", camera_id="drobilka-1", level="empty", previous="ok",
                                       duration_s=60, zones=("Дно",), snapshot=frame, frame=frame))
     event = wait_for(lambda: client.get("/api/events", params={"camera_id": "drobilka-1"}).json())[0]
-    assert event["title"] == "Дробилка 1: закончились семена" and event["speech"] == "Пусто!"
+    assert event["title"] == "Мельница 1: закончились семена" and event["speech"] == "Пусто!"
     assert client.get(f"/api/files/{event['snapshot']}").status_code == 200
     sample = client.post("/api/crushers/drobilka-1/samples", json={"labels": {"z1": "empty"},
                                                                     "event_uid": event["uid"]}).json()
@@ -415,7 +415,7 @@ def test_cli_crushers_check_and_password(tmp_path, video, capsys, monkeypatch):
     new_store(tmp_path / "config", *specs)
     assert run_cli(tmp_path, monkeypatch, specs, "crushers") == 0
     out = capsys.readouterr().out
-    assert "Дробилка 1" in out and "Дно, Привод" in out and "эталонов 1" in out
+    assert "Мельница 1" in out and "Дно, Привод" in out and "эталонов 1" in out
 
     run_cli(tmp_path, monkeypatch, specs, "check")
     out = capsys.readouterr().out
@@ -479,12 +479,12 @@ def test_events_are_filtered_by_kind(tmp_path):
     from track_seeds.server.eventlog import EventLog
 
     log = EventLog(tmp_path / "log")
-    seeds = {"camera": "Дробилка 1", "camera_id": "drobilka-1", "duration_s": 60}
+    seeds = {"camera": "Мельница 1", "camera_id": "drobilka-1", "duration_s": 60}
     for level, previous, extra in [("empty", "ok", {}), ("empty", "empty", {"reminder": 1}), ("ok", "empty", {}),
                                    ("stopped", "ok", {}), ("ok", "stopped", {}), ("unknown", "ok", {}),
                                    ("low", "ok", {}), ("empty", "ok", {"test": True})]:
         log.record(SeedsLevelChanged(level=level, previous=previous, **seeds, **extra))
-    log.record(CameraOffline(camera="Дробилка 2", camera_id="drobilka-2", since=0))
+    log.record(CameraOffline(camera="Мельница 2", camera_id="drobilka-2", since=0))
     assert log.counts() == {"empty": 1, "reminder": 1, "refill": 1, "stopped": 1, "started": 1, "unknown": 1,
                             "low": 1, "test": 1, "offline": 1}
     assert "test" not in log.counts(tests=False) and log.counts("drobilka-2") == {"offline": 1}
@@ -506,7 +506,7 @@ def test_events_are_filtered_by_kind(tmp_path):
 
 
 def test_crusher_state_survives_server_restart(tmp_path):
-    """Обновление прода: состояние дробилок пишется в data/resume.json и отдаётся воркерам при запуске."""
+    """Обновление прода: состояние мельниц пишется в data/resume.json и отдаётся воркерам при запуске."""
     from track_seeds.server.resume import ResumeFile
     from track_seeds.server.workers import CameraWorker
 

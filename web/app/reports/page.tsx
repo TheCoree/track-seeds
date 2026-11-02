@@ -36,7 +36,7 @@ function title(report: Report): string {
   return month.charAt(0).toUpperCase() + month.slice(1);
 }
 
-/** Отчёты: сколько дробилки работали, стояли, крутились без зерна — за день, неделю, месяц. */
+/** Отчёты: сколько мельницы работали, стояли, крутились без зерна — за день, неделю, месяц. */
 function Reports() {
   const params = useSearchParams();
   const router = useRouter();
@@ -58,7 +58,7 @@ function Reports() {
     const url = URL.createObjectURL(new Blob([reportCsv(report)], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `дробилки-${report.period === "day" ? "день" : report.period === "week" ? "неделя" : "месяц"}-${report.date}.csv`;
+    a.download = `мельницы-${report.period === "day" ? "день" : report.period === "week" ? "неделя" : "месяц"}-${report.date}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };

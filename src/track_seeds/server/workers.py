@@ -1,4 +1,4 @@
-"""Дробилки в работе: по конвейеру на дробилку, общая шина, уведомления, голос, журнал событий."""
+"""Мельницы в работе: по конвейеру на мельницу, общая шина, уведомления, голос, журнал событий."""
 
 import dataclasses
 import logging
@@ -115,7 +115,7 @@ class LiveHub:
 
 
 class CameraPublisher:
-    """Проставляет id дробилки в события, чтобы журнал и голос знали, откуда они."""
+    """Проставляет id мельницы в события, чтобы журнал и голос знали, откуда они."""
 
     def __init__(self, bus: EventBus, camera_id: str) -> None:
         self._bus = bus
@@ -126,7 +126,7 @@ class CameraPublisher:
 
 
 class CameraWorker:
-    """Одна дробилка: камера → анализ семян → события."""
+    """Одна мельница: камера → анализ семян → события."""
 
     def __init__(self, crusher: Crusher, settings: GlobalSettings, store: ConfigStore, bus: EventBus,
                  resume: dict | None = None) -> None:
@@ -188,12 +188,12 @@ class CameraWorker:
                 analyzer = self._analyzer()
             except Exception as e:
                 self.state, self.error = "error", f"Анализ не запустился: {e}"
-                log.exception("Дробилка «%s»: анализ не запустился", self.crusher.name)
+                log.exception("Мельница «%s»: анализ не запустился", self.crusher.name)
                 self._stop.wait(_BUILD_RETRY_S)
                 continue
             # после перезапуска сервера или падения обработки — с прежнего состояния («семена есть уже 2 ч»)
             if (saved := self.snapshot()) is not None and analyzer.restore(saved, time.time()):
-                log.info("Дробилка «%s»: продолжаю с прежнего состояния (%s)", self.crusher.name,
+                log.info("Мельница «%s»: продолжаю с прежнего состояния (%s)", self.crusher.name,
                          saved.get("level") or "не определено")
             camera = self.crusher.camera.model_copy(update={"name": self.crusher.name})
             self._source = OpenCVSource(camera)
@@ -204,7 +204,7 @@ class CameraWorker:
                 self._pipeline.run(self._stop)
             except Exception as e:
                 self.state, self.error = "error", f"Обработка упала: {e}"
-                log.exception("Дробилка «%s»: обработка упала, перезапуск", self.crusher.name)
+                log.exception("Мельница «%s»: обработка упала, перезапуск", self.crusher.name)
                 self._stop.wait(5)
 
     def apply(self, crusher: Crusher, settings: GlobalSettings) -> None:
@@ -225,7 +225,7 @@ class CameraWorker:
                     self.error = None
                 except Exception as e:
                     self.error = f"Новые настройки не применились: {e}"
-                    log.exception("Дробилка «%s»: новые настройки не применились", crusher.name)
+                    log.exception("Мельница «%s»: новые настройки не применились", crusher.name)
 
         threading.Thread(target=rebuild, name=f"rebuild-{self.id}", daemon=True).start()
 
@@ -332,7 +332,7 @@ class Supervisor:
         for t in threads:
             t.join()
         self.resume.stop()
-        self.resume.save(self._snapshots())  # каждая дробилка запомнила состояние в stop()
+        self.resume.save(self._snapshots())  # каждая мельница запомнила состояние в stop()
         self.worklog.close()
         self.bus.stop()
         self.announcer.stop(timeout=30)
@@ -425,7 +425,7 @@ class Supervisor:
     def speakers(self, crusher_id: str) -> list[Speaker]:
         return self._speakers.get(crusher_id, [])
 
-    # --- дробилки ---
+    # --- мельницы ---
 
     def worker(self, crusher_id: str) -> CameraWorker | None:
         return self._workers.get(crusher_id)

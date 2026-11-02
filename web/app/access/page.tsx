@@ -94,7 +94,7 @@ function Access() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Клиенты</h1>
-          <p className="text-sm text-muted-foreground">Видят дробилки, события и отчёты — без настроек</p>
+          <p className="text-sm text-muted-foreground">Видят мельницы, события и отчёты — без настроек</p>
         </div>
         <Button size="lg" disabled={me?.open} onClick={() => setInviting(true)}>
           <UserPlus /> Пригласить

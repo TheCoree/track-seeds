@@ -54,7 +54,7 @@ function when(period: Period, ts: number): string {
   return period === "day" ? hhmm(ts) : new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Дробилка за период: три главных числа, одна строка подробностей, график (или таблица). */
+/** Мельница за период: три главных числа, одна строка подробностей, график (или таблица). */
 /** Итог за неделю или месяц — целыми часами: «335 ч» читается, «335 ч 5 мин» — нет. */
 export function total(seconds: number): string {
   return seconds >= 86400 ? `${Math.round(seconds / 3600)} ч` : hoursMinutes(seconds);
@@ -103,7 +103,7 @@ function Tile({ label, value, note, color, spark }: { label: string; value: stri
   );
 }
 
-/** Сводка по обеим дробилкам. */
+/** Сводка по обеим мельницам. */
 export function SummaryTiles({ report }: { report: Report }) {
   const cs = report.crushers;
   const buckets = report.edges.slice(0, -1).map((_, i) => i);
@@ -113,7 +113,7 @@ export function SummaryTiles({ report }: { report: Report }) {
   const observed = sum(cs, (t) => t.running + t.idle + t.stopped + t.offline);
   const stops = cs.reduce((a, c) => a + c.stops, 0);
   const runouts = cs.reduce((a, c) => a + c.runouts, 0);
-  const each = (f: (c: CrusherReport) => string) => cs.map((c) => `${c.name.replace("Дробилка ", "Д")}: ${f(c)}`).join(" · ");
+  const each = (f: (c: CrusherReport) => string) => cs.map((c) => `${c.name.replace("Мельница ", "М")}: ${f(c)}`).join(" · ");
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Tile
@@ -142,13 +142,13 @@ export function SummaryTiles({ report }: { report: Report }) {
   );
 }
 
-/** Загрузка: доля времени каждой дробилки по состояниям — одной полосой. */
+/** Загрузка: доля времени каждой мельницы по состояниям — одной полосой. */
 export function Utilization({ report }: { report: Report }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Загрузка</CardTitle>
-        <CardDescription>Доля времени за период — на каждой дробилке</CardDescription>
+        <CardDescription>Доля времени за период — на каждой мельнице</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {report.crushers.map((c) => {
@@ -175,7 +175,7 @@ export function Utilization({ report }: { report: Report }) {
   );
 }
 
-/** Дробилка: главные числа, график (или таблица), подробности. */
+/** Мельница: главные числа, график (или таблица), подробности. */
 export function CrusherReportCard({ report, crusher, table }: { report: Report; crusher: CrusherReport; table: boolean }) {
   const t = shownTotals(crusher.totals);
   const work = t.running + t.idle;
@@ -201,14 +201,14 @@ export function CrusherReportCard({ report, crusher, table }: { report: Report; 
   );
 }
 
-/** Простои за день по обеим дробилкам — по времени. */
+/** Простои за день по обеим мельницам — по времени. */
 export function StopsCard({ report }: { report: Report }) {
   const rows = report.crushers.flatMap((c) => (c.stop_list ?? []).map(([s, e]) => ({ name: c.name, s, e }))).sort((a, b) => a.s - b.s);
   return (
     <Card>
       <CardHeader>
         <CardTitle>Простои</CardTitle>
-        <CardDescription>Дробилка стояла дольше минуты</CardDescription>
+        <CardDescription>Мельница стояла дольше минуты</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -217,7 +217,7 @@ export function StopsCard({ report }: { report: Report }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Дробилка</TableHead>
+                <TableHead>Мельница</TableHead>
                 <TableHead>Когда</TableHead>
                 <TableHead className="text-right">Сколько</TableHead>
               </TableRow>
@@ -387,7 +387,7 @@ function BucketTable({ report, crusher }: { report: Report; crusher: CrusherRepo
 
 /** CSV для Excel: «;» и BOM — иначе кириллица и столбцы разъедутся. */
 export function reportCsv(report: Report): string {
-  const head = ["Дробилка", report.period === "day" ? "Час" : "День", ...STATES.map((s) => `${s.label}, ч`), "Нет данных, ч"];
+  const head = ["Мельница", report.period === "day" ? "Час" : "День", ...STATES.map((s) => `${s.label}, ч`), "Нет данных, ч"];
   const rows = report.crushers.flatMap((c) =>
     c.buckets.flatMap((b, i) => {
       if (report.edges[i] > report.now) return [];

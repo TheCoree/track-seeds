@@ -71,7 +71,7 @@ class CameraOnline(Event):
 @dataclass(frozen=True, kw_only=True)
 class SeedsLevelChanged(Event):
     """Уровень семян в бункере: ok — есть, low — мало, empty — закончились, unknown — не видно,
-    stopped — дробилка стоит (привод не движется), о семенах не сообщается."""
+    stopped — мельница стоит (привод не движется), о семенах не сообщается."""
 
     level: str
     previous: str | None  # None — первое определение после запуска

@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useApp } from "./app-shell";
 
 export interface VoiceStatus {
-  engine: "piper" | "espeak" | null;
+  engine: "vosk" | "piper" | "espeak" | null;
   voice: string | null;
   configured?: string;
   state: "idle" | "loading" | "ready" | "error";
@@ -54,7 +54,7 @@ export function useVoicePlayer() {
         audio.onended = () => URL.revokeObjectURL(url);
         await audio.play();
         if (engine === "espeak")
-          toast.add({ title: "Сказано запасным голосом espeak-ng", description: "Голос piper не загрузился — см. «Уведомления и голос»", type: "warning" });
+          toast.add({ title: "Сказано запасным голосом espeak-ng", description: "Выбранный голос не загрузился — см. «Уведомления и голос»", type: "warning" });
         else toast.add({ title: `Голос: ${title(voice)}` });
       } catch (e) {
         toast.add({ title: "Не удалось прослушать", description: e instanceof Error ? e.message : String(e), type: "error" });
@@ -112,7 +112,7 @@ export function VoiceStatusLine() {
   if (data.state === "error" && data.engine === "espeak")
     return badge("amber", CircleAlert, `Голос ${title(data.configured)} не загрузился — говорит запасной espeak-ng. ${data.error ?? ""}`);
   if (data.state === "error") return badge("red", CircleAlert, `Синтез речи не работает: ${data.error}`);
-  if (data.state === "loading") return badge("blue", Loader2, `Голос ${title(data.configured)} скачивается (~60 МБ, один раз)…`, true);
+  if (data.state === "loading") return badge("blue", Loader2, `Голос ${title(data.configured)} скачивается (${data.configured?.startsWith("vosk-") ? "~930 МБ" : "~60 МБ"}, один раз)…`, true);
   if (data.engine === "espeak") return badge("gray", AudioLines, "Говорит espeak-ng");
   return badge("green", CircleCheck, `Голос ${title(data.voice)}: ${data.state === "ready" ? "готов" : "загрузится при первой фразе"}`);
 }
