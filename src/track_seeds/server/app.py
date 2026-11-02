@@ -947,6 +947,11 @@ def create_app(sup: Supervisor, static_dir: Path | None = None, password: str | 
             sup.update_sample(crusher_id, sample_id, dict(body.labels))
         return {"ok": True}
 
+    @admin_api.post("/api/crushers/{crusher_id}/samples/restore-builtin")
+    def restore_builtin_samples(crusher_id: str) -> dict[str, Any]:
+        crusher_or_404(crusher_id)
+        return {"ok": True, "restored": sup.restore_builtin(crusher_id)}
+
     @admin_api.delete("/api/crushers/{crusher_id}/samples/{sample_id}")
     def remove_sample(crusher_id: str, sample_id: str) -> dict[str, bool]:
         crusher_or_404(crusher_id)

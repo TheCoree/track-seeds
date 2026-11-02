@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, CircleCheck, CircleX, ImageUp, Lock, Repeat, Trash2 } from "lucide-react";
+import { CircleCheck, CircleX, ImageUp, Lock, Repeat, Trash2, Undo2 } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   AlertDialog,
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 
 const LABEL_TEXT: Record<Label, string> = { full: "семена есть", empty: "пусто" };
 
-/** Вкладка «Эталоны»: вшитые кадры (только просмотр) и снятые на месте. */
+/** Вкладка «Эталоны»: вшитые кадры (можно убрать и вернуть) и снятые на месте. */
 export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: () => void }) {
   const [uploadLabel, setUploadLabel] = useState<Label>("empty");
   const [zoom, setZoom] = useState<SeedSample | null>(null);
@@ -75,7 +75,18 @@ export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: 
         await api.del(`/crushers/${crusher.id}/samples/${sample.id}`);
         onSaved();
       },
-      "Эталон удалён",
+      sample.builtin ? "Эталон из программы убран" : "Эталон удалён",
+    );
+
+  const removedBuiltin = crusher.seeds.removed_builtin?.length ?? 0;
+  const restoreBuiltin = () =>
+    run(
+      "restore",
+      async () => {
+        await api.post(`/crushers/${crusher.id}/samples/restore-builtin`, {});
+        onSaved();
+      },
+      "Эталоны из программы возвращены",
     );
 
   return (
@@ -134,8 +145,16 @@ export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: 
         <CardHeader>
           <CardTitle>Эталоны ({samples.length})</CardTitle>
           <CardDescription>
-            <Lock className="mr-1 inline size-3.5" />— вшиты в программу (сняты при полном желобе и работающей дробилке). Свои можно переотметить и удалить.
+            <Lock className="mr-1 inline size-3.5" />— вшиты в программу (сняты при полном желобе и работающей дробилке): их можно убрать и вернуть. Свои можно ещё и переотметить.
           </CardDescription>
+          {removedBuiltin > 0 && (
+            <CardAction>
+              <Button variant="outline" size="sm" disabled={busy === "restore"} onClick={restoreBuiltin}>
+                {busy === "restore" ? <Spinner /> : <Undo2 />}
+                Вернуть из программы ({removedBuiltin})
+              </Button>
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -160,33 +179,36 @@ export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: 
                       </Badge>
                     ))}
                   </div>
-                  {!sample.builtin && (
-                    <div className="mt-auto flex gap-1">
+                  <div className="mt-auto flex gap-1">
+                    {!sample.builtin && (
                       <Tooltip>
                         <TooltipTrigger render={<Button variant="ghost" size="sm" disabled={busy === "relabel"} onClick={() => relabel(sample)} />}>
                           <Repeat /> Поменять
                         </TooltipTrigger>
                         <TooltipContent>«есть» ↔ «пусто»</TooltipContent>
                       </Tooltip>
-                      <AlertDialog>
-                        <AlertDialogTrigger render={<Button variant="ghost" size="sm" className="text-destructive" />}>
-                          <Trash2 /> Удалить
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Удалить эталон?</AlertDialogTitle>
-                            <AlertDialogDescription>Кадр от {dateTime(sample.ts)} больше не будет участвовать в сравнении.</AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Отмена</AlertDialogCancel>
-                            <AlertDialogAction variant="destructive" onClick={() => remove(sample)}>
-                              Удалить
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  )}
+                    )}
+                    <AlertDialog>
+                      <AlertDialogTrigger render={<Button variant="ghost" size="sm" className="text-destructive" />}>
+                        <Trash2 /> Удалить
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{sample.builtin ? "Убрать эталон из программы?" : "Удалить эталон?"}</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Кадр от {dateTime(sample.ts)} больше не будет участвовать в сравнении.
+                            {sample.builtin && " Вернуть его можно кнопкой «Вернуть из программы» над списком."}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Отмена</AlertDialogCancel>
+                          <AlertDialogAction variant="destructive" onClick={() => remove(sample)}>
+                            Удалить
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </div>
               </div>
             ))}

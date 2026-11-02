@@ -79,6 +79,8 @@ export interface SeedSample {
 export interface SeedsConfig {
   zones: SeedZone[];
   samples: SeedSample[];
+  /** id вшитых эталонов, убранных на месте */
+  removed_builtin: string[];
   say_empty: string;
   say_low: string;
   say_refill: string;
