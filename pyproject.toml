@@ -1,19 +1,21 @@
 [project]
 name = "track-seeds"
 version = "0.1.0"
-description = "Мониторинг по IP-камерам (OpenCV): семена в дробилке, люди, номера машин; веб-интерфейс, ntfy, голос"
+description = "Мониторинг по IP-камерам (OpenCV): семена в мельнице, люди, номера машин; веб-интерфейс, ntfy, голос"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fast-plate-ocr>=1.1",
     "fastapi>=0.120",
     "numpy>=2.3",
+    "onnx>=1.17",  # сжатие BERT голоса Vosk в int8 при скачивании
     "onnxruntime>=1.23",
     "open-image-models>=0.6",
     "opencv-python-headless>=5.0",
     "piper-tts>=1.3",
     "pydantic-settings>=2.11",
     "uvicorn>=0.38",
+    "vosk-tts>=0.3.61,<0.4",  # голос; его внутренности (Synth.g2p_multistream) используются напрямую
 ]
 
 [project.optional-dependencies]

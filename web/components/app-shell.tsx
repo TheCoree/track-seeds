@@ -168,7 +168,7 @@ export function AdminOnly({ children }: { children: ReactNode }) {
       <ShieldCheck className="size-8" />
       <div className="font-medium text-foreground">Только для разработчика</div>
       <Link href="/" className="text-sm underline underline-offset-2">
-        К дробилкам
+        К мельницам
       </Link>
     </div>
   );
@@ -207,13 +207,13 @@ function AppSidebar() {
           </span>
           <span className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold">track-seeds</span>
-            <span className="text-xs text-muted-foreground">{isAdmin ? "панель разработчика" : "семена в дробилках"}</span>
+            <span className="text-xs text-muted-foreground">{isAdmin ? "панель разработчика" : "семена в мельницах"}</span>
           </span>
         </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Дробилки</SidebarGroupLabel>
+          <SidebarGroupLabel>Мельницы</SidebarGroupLabel>
           <SidebarGroupContent>
             {/* useSearchParams в статической сборке — только внутри Suspense */}
             <Suspense fallback={<CrusherMenu currentId={null} />}>
@@ -258,7 +258,7 @@ function AppSidebar() {
   );
 }
 
-/** Выбранная дробилка — из ?id= в адресе: при переходе между дробилками путь тот же, меняется только он. */
+/** Выбранная мельница — из ?id= в адресе: при переходе между мельницами путь тот же, меняется только он. */
 function CrusherMenuFromUrl() {
   const pathname = usePathname();
   const id = useSearchParams().get("id");

@@ -1,5 +1,5 @@
 # Сервер: docker compose up -d --build   (первый раз — deploy/setup.sh)
-# Дробилки вшиты в образ; в ./config — пароли камер и что меняли в интерфейсе (см. README).
+# Мельницы вшиты в образ; в ./config — пароли камер и что меняли в интерфейсе (см. README).
 services:
   track-seeds:
     build:

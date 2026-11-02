@@ -87,7 +87,7 @@ export default function EventsPage() {
     };
   }, [ready, filterKey, lastSeq]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // числа на кнопках — за весь журнал выбранной дробилки
+  // числа на кнопках — за весь журнал выбранной мельницы
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
@@ -120,9 +120,9 @@ export default function EventsPage() {
       </div>
       <div className="flex flex-col gap-3">
         <Field className="w-auto self-start">
-          <FieldLabel htmlFor={crusherId}>Дробилка</FieldLabel>
+          <FieldLabel htmlFor={crusherId}>Мельница</FieldLabel>
           <NativeSelect id={crusherId} value={crusher} onChange={(e) => setCrusher(e.target.value)}>
-            <NativeSelectOption value="">Обе дробилки</NativeSelectOption>
+            <NativeSelectOption value="">Обе мельницы</NativeSelectOption>
             {overview?.crushers.map((c) => (
               <NativeSelectOption key={c.id} value={c.id}>
                 {c.name}

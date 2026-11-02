@@ -59,7 +59,7 @@ KINDS = ("empty", "reminder", "low", "refill", "stopped", "started", "unknown", 
 
 def event_kind(type_name: str, data: dict) -> str:
     """empty — закончились, reminder — «всё ещё пусто», low — заканчиваются, refill — семена есть (досыпали),
-    stopped / started — дробилка остановилась / запустилась, unknown — не видно желоб,
+    stopped / started — мельница остановилась / запустилась, unknown — не видно желоб,
     offline / online — связь с камерой, test — проверка оповещений."""
     if data.get("test"):
         return "test"

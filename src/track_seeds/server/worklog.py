@@ -1,8 +1,8 @@
-"""Журнал работы дробилок для отчётов: сколько работала, сколько без зерна, сколько стояла.
+"""Журнал работы мельниц для отчётов: сколько работала, сколько без зерна, сколько стояла.
 
-Раз в 5 секунд сервер смотрит состояние каждой дробилки и продлевает текущий интервал (в базе —
+Раз в 5 секунд сервер смотрит состояние каждой мельницы и продлевает текущий интервал (в базе —
 раз в 30 секунд), смена состояния закрывает интервал и открывает новый. Пока сервер выключен или
-наблюдение за дробилкой выключено, интервалов нет — в отчёте это «нет данных».
+наблюдение за мельницей выключено, интервалов нет — в отчёте это «нет данных».
 
 Состояния: running — привод крутится, семена есть; idle — крутится, но семена закончились;
 stopped — привод стоит; offline — нет связи с камерой; unknown — работает ли, не определить.
@@ -47,7 +47,7 @@ class WorkLog:
         self._db.executescript(_SCHEMA)
         self._lock = threading.Lock()
         self._keep_days = keep_days
-        self._open: dict[str, list] = {}  # дробилка → [id строки, состояние, начало, конец]
+        self._open: dict[str, list] = {}  # мельница → [id строки, состояние, начало, конец]
         self._flushed = time.time()
         self._pruned = 0.0
         self._stop = threading.Event()
@@ -56,7 +56,7 @@ class WorkLog:
     # --- запись ---
 
     def record(self, crusher_id: str, state: str | None, ts: float) -> None:
-        """Состояние дробилки на момент ts; None — не наблюдается (интервал закрывается)."""
+        """Состояние мельницы на момент ts; None — не наблюдается (интервал закрывается)."""
         with self._lock:
             current = self._open.get(crusher_id)
             if current is not None and (state != current[1] or ts - current[3] > _GAP_S):
@@ -84,7 +84,7 @@ class WorkLog:
         self._db.execute("UPDATE work SET end = ? WHERE id = ?", (row[3], row[0]))
 
     def start(self, states: Callable[[], Iterable[tuple[str, str | None]]], interval_s: float = 5) -> None:
-        """Фоновый поток: раз в interval_s записывает states() → (дробилка, состояние)."""
+        """Фоновый поток: раз в interval_s записывает states() → (мельница, состояние)."""
 
         def run() -> None:
             while not self._stop.wait(interval_s):

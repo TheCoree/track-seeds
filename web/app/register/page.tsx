@@ -94,7 +94,7 @@ function RegisterForm() {
         <CardHeader>
           <CardTitle className="text-xl">{invite.reset ? "Новый пароль" : "Регистрация"}</CardTitle>
           <CardDescription>
-            {invite.reset ? `Для входа ${invite.username}.` : "Просмотр дробилок в реальном времени и отчёты о работе."} Ссылка одноразовая, действует до {until}.
+            {invite.reset ? `Для входа ${invite.username}.` : "Просмотр мельниц в реальном времени и отчёты о работе."} Ссылка одноразовая, действует до {until}.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-4">

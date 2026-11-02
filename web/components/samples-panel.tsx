@@ -95,7 +95,7 @@ export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: 
         <Card>
           <CardHeader>
             <CardTitle>Снять эталон сейчас</CardTitle>
-            <CardDescription>Текущий кадр с камеры: что сейчас в желобе? Снимайте, когда дробилка работает — пока стоит, семена не проверяются.</CardDescription>
+            <CardDescription>Текущий кадр с камеры: что сейчас в желобе? Снимайте, когда мельница работает — пока стоит, семена не проверяются.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2">
@@ -109,7 +109,7 @@ export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: 
               </Button>
             </div>
             {!live && <p className="text-xs text-destructive">Камера не подключена — снимать нечего.</p>}
-            {live && running === false && <p className="text-xs text-amber-700">Дробилка сейчас стоит — такой кадр может не походить на работу.</p>}
+            {live && running === false && <p className="text-xs text-amber-700">Мельница сейчас стоит — такой кадр может не походить на работу.</p>}
           </CardContent>
         </Card>
         <Card>
@@ -145,7 +145,7 @@ export function SamplesPanel({ crusher, onSaved }: { crusher: Crusher; onSaved: 
         <CardHeader>
           <CardTitle>Эталоны ({samples.length})</CardTitle>
           <CardDescription>
-            <Lock className="mr-1 inline size-3.5" />— вшиты в программу (сняты при полном желобе и работающей дробилке): их можно убрать и вернуть. Свои можно ещё и переотметить.
+            <Lock className="mr-1 inline size-3.5" />— вшиты в программу (сняты при полном желобе и работающей мельнице): их можно убрать и вернуть. Свои можно ещё и переотметить.
           </CardDescription>
           {removedBuiltin > 0 && (
             <CardAction>

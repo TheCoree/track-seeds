@@ -38,11 +38,11 @@ def _split_csv(value: object) -> object:
 
 class AppConfig(BaseModel):
     log_level: str = "INFO"
-    # пресеты анализа через запятую: presence (люди), plates (номера машин), seeds (семена в дробилке)
+    # пресеты анализа через запятую: presence (люди), plates (номера машин), seeds (семена в мельнице)
     analyzers: Annotated[list[str], NoDecode] = ["presence"]
     # журнал событий, снимки, кеш голоса — у каждого компьютера свои
     data_dir: Path = Path("data")
-    # что меняли на месте: пароли камер, оповещения, свои эталоны (сами дробилки вшиты в программу)
+    # что меняли на месте: пароли камер, оповещения, свои эталоны (сами мельницы вшиты в программу)
     config_dir: Path = Path("config")
 
     _split = field_validator("analyzers", mode="before")(_split_csv)
@@ -147,12 +147,12 @@ class PlatesConfig(BaseModel):
 
 
 class SeedZone(BaseModel):
-    """Участок кадра, где видно семена (когда он открывается — семена кончаются), или привод дробилки."""
+    """Участок кадра, где видно семена (когда он открывается — семена кончаются), или привод мельницы."""
 
     id: str
     name: str = "Зона"
     # empty — у дна: открылась → «закончились»; low — выше: открылась → «заканчиваются»;
-    # motion — привод (цепь, звёздочка): неподвижен → дробилка стоит, о семенах не сообщать. Эталоны не нужны.
+    # motion — привод (цепь, звёздочка): неподвижен → мельница стоит, о семенах не сообщать. Эталоны не нужны.
     kind: Literal["empty", "low", "motion"] = "empty"
     # четыре угла в долях кадра (x, y)
     points: list[tuple[float, float]] = Field(min_length=4, max_length=4)
@@ -179,7 +179,7 @@ class SeedSample(BaseModel):
     """Эталон: кадр, на котором человек отметил, где есть семена, а где пусто."""
 
     id: str
-    image: str  # путь к кадру относительно папки дробилки (вшитые — относительно builtin/<id>/)
+    image: str  # путь к кадру относительно папки мельницы (вшитые — относительно builtin/<id>/)
     ts: float
     labels: dict[str, Literal["full", "empty"]]  # id зоны → есть семена / пусто
     builtin: bool = False  # вшит в программу: не переотмечается; удаление — в SeedsConfig.removed_builtin
@@ -207,7 +207,7 @@ class SeedsConfig(BaseModel):
     min_brightness: float = Field(15, ge=0, le=255, title="Мин. яркость зоны",
                                   description="Темнее — «не видно» (выключен свет)", json_schema_extra=ADVANCED)
     # Включено: рабочие ворошат семена в желобе на ходу, и перчатка в зоне выглядела как пустой желоб
-    # (30.10.2026, дробилка 2 — три ложные тревоги). Камера видит рабочего целиком, детектор его находит.
+    # (30.10.2026, мельница 2 — три ложные тревоги). Камера видит рабочего целиком, детектор его находит.
     # Детектор запускается, только когда желоб читается «пусто», и не чаще раза в секунду.
     ignore_people: bool = Field(True, title="Не считать пустой зону, которую загородил человек",
                                 description="Детектор людей (+~110 МБ памяти): рука рабочего в желобе — "
@@ -218,11 +218,11 @@ class SeedsConfig(BaseModel):
     remind_every_s: float = Field(600, ge=0, title="Напоминать «всё ещё пусто» каждые, с",
                                   description="0 — не напоминать", json_schema_extra=UI)
     notify_refill: bool = Field(True, title="Сообщать, когда досыпали", json_schema_extra=UI)
-    notify_stopped: bool = Field(True, title="Сообщать, когда дробилка остановилась и запустилась",
+    notify_stopped: bool = Field(True, title="Сообщать, когда мельница остановилась и запустилась",
                                  description="Нужна зона «привод». Сразу после запуска сервера — только в журнал",
                                  json_schema_extra=UI)
-    stopped_after_s: float = Field(10, gt=0, title="«Дробилка стоит», если привод неподвижен дольше, с",
-                                   description="Нужна зона «привод». Пока дробилка стоит, о пустом желобе не "
+    stopped_after_s: float = Field(10, gt=0, title="«Мельница стоит», если привод неподвижен дольше, с",
+                                   description="Нужна зона «привод». Пока мельница стоит, о пустом желобе не "
                                                "сообщается", json_schema_extra=UI)
     running_after_s: float = Field(5, gt=0, title="«Работает», если привод движется дольше, с",
                                    description="После запуска наличие семян подтверждается заново — по кадрам "
@@ -236,8 +236,8 @@ class SeedsConfig(BaseModel):
         description="Насколько картинка может отличаться от эталона «есть», прежде чем считать зону пустой. "
                     "Больше — меньше ложных тревог, но позже заметит пустоту", json_schema_extra=ADVANCED)
 
-    # голосовые фразы (динамики — в настройках дробилки)
-    say_empty: str = "Внимание! В дробилке нет зерна."
+    # голосовые фразы (динамики — в настройках мельницы)
+    say_empty: str = "Внимание! В мельнице нет зерна."
     say_low: str = ""
     say_refill: str = ""
     say_unknown: str = ""
@@ -293,17 +293,23 @@ class NtfyConfig(BaseModel):
 
 
 class VoiceConfig(BaseModel):
-    engine: Literal["auto", "piper", "espeak"] = Field(
+    engine: Literal["auto", "espeak"] = Field(
         "auto", title="Синтез речи",
-        description="piper — естественный голос (нейросеть, без интернета); espeak — роботизированный, "
-                    "но всегда есть; auto — piper, если установлен", json_schema_extra=UI)
-    voice: str = Field("ru_RU-irina-medium", title="Голос", json_schema_extra=UI)
+        description="Если выбранный голос не загрузился, говорит запасной espeak-ng", json_schema_extra=UI)
+    voice: str = Field("vosk-male-1", title="Голос",
+                       description="Vosk — естественная интонация и верные ударения. Неверное ударение во фразе "
+                                   "поправляется плюсом перед ударной гласной: «сем+ена»", json_schema_extra=UI)
     speed: float = Field(0.9, ge=0.5, le=2, title="Скорость речи", description="1 — обычная, меньше — медленнее",
                          json_schema_extra=UI)
     volume: float = Field(1.0, gt=0, le=1, title="Громкость (доля от максимума)", json_schema_extra=UI)
     chime: bool = Field(True, title="Сигнал перед фразой", description="Короткий «динь-дон», чтобы обратили внимание",
                         json_schema_extra=UI)
     pause_s: float = Field(1.0, ge=0, le=5, title="Пауза между повторами фразы, с", json_schema_extra=ADVANCED)
+
+    @field_validator("engine", mode="before")
+    @classmethod
+    def _old_engine(cls, value: object) -> object:
+        return "auto" if value == "piper" else value  # до Vosk: piper = «нейросетевой голос»
 
 
 class SpeakerConfig(BaseModel):

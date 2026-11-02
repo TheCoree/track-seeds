@@ -9,15 +9,15 @@ const inter = Inter({ subsets: ["latin", "cyrillic"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
   title: "track-seeds",
-  description: "Семена в дробилках: камеры, тревоги, отчёты",
-  applicationName: "Дробилки",
+  description: "Семена в мельницах: камеры, тревоги, отчёты",
+  applicationName: "Мельницы",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
   // iPhone: «Поделиться → На экран „Домой“» — открывается без адресной строки, как приложение
-  appleWebApp: { capable: true, title: "Дробилки", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Мельницы", statusBarStyle: "default" },
   formatDetection: { telephone: false },
 };
 

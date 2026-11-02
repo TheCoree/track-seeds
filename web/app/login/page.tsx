@@ -79,7 +79,7 @@ function LoginForm() {
       <form ref={form} onSubmit={submit}>
         <CardHeader>
           <CardTitle className="text-xl">Вход</CardTitle>
-          <CardDescription>Дробилки в реальном времени и отчёты о работе</CardDescription>
+          <CardDescription>Мельницы в реальном времени и отчёты о работе</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-4">
           {needCode ? (

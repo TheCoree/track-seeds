@@ -78,7 +78,7 @@ export function SpeakersEditor({
               <SpeakerIcon />
             </EmptyMedia>
             <EmptyTitle>Динамиков нет</EmptyTitle>
-            <EmptyDescription>Эта дробилка оповещает только уведомлениями на телефон и в браузере.</EmptyDescription>
+            <EmptyDescription>Эта мельница оповещает только уведомлениями на телефон и в браузере.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}

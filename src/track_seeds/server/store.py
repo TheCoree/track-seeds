@@ -1,17 +1,17 @@
-"""Дробилки (вшиты в программу, см. crushers.py) и то, что о них меняют на месте через веб-интерфейс.
+"""Мельницы (вшиты в программу, см. crushers.py) и то, что о них меняют на месте через веб-интерфейс.
 
     config/
-    ├── settings.json          уведомления, голос — общие для всех дробилок (права 600: токен ntfy)
+    ├── settings.json          уведомления, голос — общие для всех мельниц (права 600: токен ntfy)
     ├── crushers/
     │   ├── drobilka-1/
     │   │   ├── settings.json  что поменяли в интерфейсе: оповещения, фразы, динамики, вкл/выкл — без паролей
     │   │   ├── secrets.json   пароли камеры и динамиков (права 600)
     │   │   └── samples/       эталоны, снятые на месте (вшитые — в программе)
     │   └── drobilka-2/ …
-    └── .trash/                прежние папки (например, пресеты до того, как дробилки вшили в программу)
+    └── .trash/                прежние папки (например, пресеты до того, как мельницы вшили в программу)
 
 Чего нет в settings.json, берётся из программы: обновили программу — новые значения по умолчанию
-применяются сами. Испорченный settings.json дробилку не останавливает: она работает с настройками
+применяются сами. Испорченный settings.json мельницу не останавливает: она работает с настройками
 из программы, ошибка видна в вебе и в `track-seeds crushers`.
 Запись атомарная (временный файл + rename), прежняя версия остаётся в *.bak.
 """
@@ -39,7 +39,7 @@ FORMAT = 1
 
 
 class Crusher(BaseModel):
-    """Одна дробилка в работе: вшитое описание + изменения, сделанные на месте."""
+    """Одна мельница в работе: вшитое описание + изменения, сделанные на месте."""
 
     id: str
     name: str
@@ -74,7 +74,7 @@ def _changed(value: dict[str, Any], default: dict[str, Any]) -> dict[str, Any]:
 
 
 def defaults(spec: CrusherSpec) -> Crusher:
-    """Дробилка такой, как она вшита в программу."""
+    """Мельница такой, как она вшита в программу."""
     return Crusher(id=spec.id, name=spec.name,
                    camera=CameraConfig(url=spec.camera_url, username=spec.username, name=spec.name),
                    seeds=SeedsConfig(zones=list(spec.zones), samples=list(spec.samples)))
@@ -151,7 +151,7 @@ def _read_json(path: Path) -> dict | None:
 
 class ConfigStore:
     def __init__(self, root: Path, crushers: Sequence[CrusherSpec] | None = None) -> None:
-        """crushers — какие дробилки есть (по умолчанию вшитые в программу; в тестах — свои)."""
+        """crushers — какие мельницы есть (по умолчанию вшитые в программу; в тестах — свои)."""
         self.root = root
         self.crushers_dir = root / "crushers"
         self.trash_dir = root / ".trash"
@@ -159,7 +159,7 @@ class ConfigStore:
         self.specs = {spec.id: spec for spec in (builtin.CRUSHERS if crushers is None else crushers)}
         self._lock = threading.RLock()
         self.crushers: dict[str, Crusher] = {}
-        self.errors: dict[str, str] = {}  # дробилка → почему не прочитались её настройки
+        self.errors: dict[str, str] = {}  # мельница → почему не прочитались её настройки
         self.settings = GlobalSettings()
 
     def exists(self) -> bool:
@@ -168,7 +168,7 @@ class ConfigStore:
     # --- чтение ---
 
     def load(self) -> list[str]:
-        """Общие настройки обязательны (битый settings.json — ошибка, не тихий сброс); дробилки — по одной.
+        """Общие настройки обязательны (битый settings.json — ошибка, не тихий сброс); мельницы — по одной.
         Возвращает, что перенесено из прежних пресетов (для лога)."""
         with self._lock:
             self.settings = GlobalSettings.model_validate_json(self.settings_path.read_text(encoding="utf-8"))
@@ -186,7 +186,7 @@ class ConfigStore:
             self.crushers[spec.id] = join(spec, _read_json(folder / "settings.json"), secrets)
         except (OSError, ValueError, ValidationError) as e:
             self.errors[spec.id] = f"{type(e).__name__}: {e}"
-            log.error("Настройки дробилки %s не прочитались (%s) — работает с настройками из программы", spec.id, e)
+            log.error("Настройки мельницы %s не прочитались (%s) — работает с настройками из программы", spec.id, e)
             try:
                 self.crushers[spec.id] = join(spec, None, secrets)
             except ValidationError:
@@ -253,7 +253,7 @@ class ConfigStore:
         for folder in sorted(p for p in presets.iterdir() if p.is_dir() and not p.name.startswith(".")):
             spec = self.specs.get(folder.name)
             if spec is None:
-                moved.append(f"пресет {folder.name} не перенесён: такой дробилки в программе нет")
+                moved.append(f"пресет {folder.name} не перенесён: такой мельницы в программе нет")
                 continue
             if self.crusher_dir(spec.id).exists():
                 continue

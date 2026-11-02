@@ -38,14 +38,14 @@ function Settings() {
 
   if (!settings || !meta) return <Skeleton className="mx-auto h-96 w-full max-w-3xl rounded-xl" />;
 
-  // все сохранённые динамики обеих дробилок — для проверки голоса
+  // все сохранённые динамики обеих мельниц — для проверки голоса
   const targets: SpeakerTarget[] = ((overview?.crushers ?? []) as Crusher[]).flatMap((c) => c.speakers.map((s) => ({ crusherId: c.id, id: s.id, name: `${c.name} · ${s.name}` })));
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Уведомления и голос</h1>
-        <p className="text-sm text-muted-foreground">Общие для обеих дробилок. Когда сообщать и динамики — у каждой дробилки на вкладке «Оповещения».</p>
+        <p className="text-sm text-muted-foreground">Общие для обеих мельниц. Когда сообщать и динамики — у каждой мельницы на вкладке «Оповещения».</p>
       </div>
       <NotifyCard initial={settings} />
       <VoiceCard initial={settings.voice} targets={targets} />
@@ -198,7 +198,7 @@ function VoiceCard({ initial, targets }: { initial: Record<string, unknown>; tar
     <Card>
       <CardHeader>
         <CardTitle>Голос</CardTitle>
-        <CardDescription>Сохраняется сразу. Новый голос скачивается один раз (~60 МБ).</CardDescription>
+        <CardDescription>Сохраняется сразу.</CardDescription>
         <CardAction>
           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
             {saving === "saving" ? <Spinner /> : saving === "saved" ? <CircleCheck className="size-4 text-emerald-600" /> : <CircleX className="size-4 text-destructive" />}
@@ -208,10 +208,10 @@ function VoiceCard({ initial, targets }: { initial: Record<string, unknown>; tar
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <VoiceStatusLine />
-        {!meta.engines.piper && !meta.engines.espeak && (
+        {!meta.engines.vosk && !meta.engines.piper && !meta.engines.espeak && (
           <Alert variant="destructive">
             <CircleAlert />
-            <AlertDescription>Нет синтеза речи: установите piper-tts (pip) или espeak-ng.</AlertDescription>
+            <AlertDescription>Нет синтеза речи: установите vosk-tts (pip) или espeak-ng.</AlertDescription>
           </Alert>
         )}
         <SettingsList>
@@ -223,8 +223,7 @@ function VoiceCard({ initial, targets }: { initial: Record<string, unknown>; tar
             only={["voice", "speed", "volume", "chime", "engine"]}
             options={{
               engine: [
-                ["auto", "Автоматически"],
-                ["piper", "piper (естественный)"],
+                ["auto", "Выбранный голос"],
                 ["espeak", "espeak-ng (роботизированный)"],
               ],
               voice: Object.entries(meta.voices),
@@ -238,7 +237,7 @@ function VoiceCard({ initial, targets }: { initial: Record<string, unknown>; tar
           <InputGroupInput
             id={textId}
             value={text}
-            placeholder="Внимание! В дробилке нет зерна."
+            placeholder="Внимание! В мельнице нет зерна."
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && text.trim() && ready && player.play(text)}
           />

@@ -54,8 +54,8 @@ export type CameraMode = "zones" | "live";
 const MODE_KEY = "track-seeds:camera-mode";
 const MODE_EVENT = "track-seeds-camera-mode";
 
-/** Как смотреть камеру дробилки: с зонами (по умолчанию) или живое видео — у каждой дробилки своё,
- *  запоминается в этом браузере; карточка в «Обзоре» и страница той же дробилки показывают одно и то же. */
+/** Как смотреть камеру мельницы: с зонами (по умолчанию) или живое видео — у каждой мельницы своё,
+ *  запоминается в этом браузере; карточка в «Обзоре» и страница той же мельницы показывают одно и то же. */
 export function useCameraMode(crusherId: string): [CameraMode, (mode: CameraMode) => void] {
   const [mode, setMode] = useState<CameraMode>("zones");
   const key = `${MODE_KEY}:${crusherId}`;
@@ -90,8 +90,8 @@ const MODES: SegmentOption<CameraMode>[] = [
 ];
 
 /**
- * Камера дробилки: «Зоны» — кадр раз в секунду с зонами и состоянием (зоны вшиты в программу — здесь только
- * показ), «Оригинал» — живое видео с камеры как есть. href — карточка ведёт на страницу дробилки.
+ * Камера мельницы: «Зоны» — кадр раз в секунду с зонами и состоянием (зоны вшиты в программу — здесь только
+ * показ), «Оригинал» — живое видео с камеры как есть. href — карточка ведёт на страницу мельницы.
  */
 export function ZoneView({ crusher, tick, className, href }: { crusher: CrusherView; tick: number; className?: string; href?: string }) {
   const [mode, setMode] = useCameraMode(crusher.id);
@@ -110,7 +110,7 @@ export function ZoneView({ crusher, tick, className, href }: { crusher: CrusherV
             <WifiOff />
           </EmptyMedia>
           <EmptyTitle>{crusher.enabled ? "Нет изображения" : "Наблюдение выключено"}</EmptyTitle>
-          <EmptyDescription>{crusher.status.error ?? (crusher.enabled ? "Камера не подключена" : "Дробилка временно не наблюдается")}</EmptyDescription>
+          <EmptyDescription>{crusher.status.error ?? (crusher.enabled ? "Камера не подключена" : "Мельница временно не наблюдается")}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );

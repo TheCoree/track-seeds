@@ -20,10 +20,10 @@ import { SpeakersEditor } from "./speakers-editor";
 import { useVoicePlayer, VoiceStatusLine } from "./voice";
 
 const PHRASES: [keyof SeedsConfig, string, string][] = [
-  ["say_empty", "Семена закончились", "Внимание! В дробилке нет зерна."],
+  ["say_empty", "Семена закончились", "Внимание! В мельнице нет зерна."],
   ["say_refill", "Семена досыпали", "Семена досыпали, спасибо."],
-  ["say_unknown", "Камера не видит желоб", "Камера не видит желоб дробилки, проверьте камеру."],
-  ["say_stopped", "Дробилка остановилась", "Внимание! Дробилка остановилась."],
+  ["say_unknown", "Камера не видит желоб", "Камера не видит желоб мельницы, проверьте камеру."],
+  ["say_stopped", "Мельница остановилась", "Внимание! Мельница остановилась."],
 ];
 
 const TIMES: SegmentOption<string>[] = [

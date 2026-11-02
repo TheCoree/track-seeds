@@ -41,7 +41,7 @@ export const LEVELS: Record<Level, { text: string; tone: Tone }> = {
   low: { text: "Семян мало", tone: "amber" },
   empty: { text: "Семена закончились", tone: "red" },
   unknown: { text: "Не видно желоб", tone: "gray" },
-  stopped: { text: "Дробилка стоит", tone: "blue" },
+  stopped: { text: "Мельница стоит", tone: "blue" },
 };
 
 /** Классы для цветных состояний — одинаковые по всему интерфейсу. */

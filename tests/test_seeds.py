@@ -177,7 +177,7 @@ def make_analyzer(tmp_path: Path, people=None, **kw) -> SeedsAnalyzer:
                SeedSample(id="2", image="s/empty.jpg", ts=0, labels={"b": "empty", "m": "empty"})]
     kw.setdefault("ignore_people", people is not None)
     settings = SeedsConfig(zones=zones, samples=samples, empty_after_s=30, refill_after_s=10, **kw)
-    return SeedsAnalyzer(settings, "Дробилка", tmp_path, people)
+    return SeedsAnalyzer(settings, "Мельница", tmp_path, people)
 
 
 def run(analyzer: SeedsAnalyzer, start: int, seconds: int, level: float, **scene_kw) -> list[SeedsLevelChanged]:
@@ -204,7 +204,7 @@ def test_full_cycle_low_empty_reminder_refill(tmp_path):
     refill = run(a, 155, 20, 0.95)
     assert [(e.level, e.previous) for e in refill] == [("ok", "empty")]
     n = format_event(refill[0])
-    assert n.title == "Дробилка: семена досыпали" and "Было пусто" in n.message
+    assert n.title == "Мельница: семена досыпали" and "Было пусто" in n.message
 
 
 def test_person_in_front_of_zone_does_not_trigger(tmp_path):
@@ -241,7 +241,7 @@ def test_new_settings_keep_state_without_repeat_alarm(tmp_path):
 def test_zone_without_samples_is_ignored(tmp_path):
     a = make_analyzer(tmp_path)
     a._settings.zones.append(SeedZone(id="x", name="Новая", points=MIDDLE))
-    b = SeedsAnalyzer(a._settings, "Дробилка", tmp_path)
+    b = SeedsAnalyzer(a._settings, "Мельница", tmp_path)
     assert [e.level for e in run(b, 0, 15, 0.95)] == ["ok"]
     assert b.status()["zones"][2]["reason"] == "no_samples"
 
@@ -271,7 +271,7 @@ def with_drive(image: np.ndarray, t: int, running: bool) -> np.ndarray:
 def make_drive_analyzer(tmp_path: Path, **kw) -> SeedsAnalyzer:
     a = make_analyzer(tmp_path, **kw)
     a._settings.zones.append(SeedZone(id="d", name="Привод", kind="motion", points=DRIVE))
-    return SeedsAnalyzer(a._settings, "Дробилка", tmp_path)
+    return SeedsAnalyzer(a._settings, "Мельница", tmp_path)
 
 
 def run_drive(analyzer: SeedsAnalyzer, start: int, seconds: int, level: float, running: bool,
@@ -353,11 +353,11 @@ def test_drive_zone_needs_no_samples_and_is_excluded_from_check(tmp_path):
 
 
 def test_short_empty_delay_does_not_fire_while_stop_is_being_confirmed(tmp_path):
-    """«Закончились» быстрее, чем подтверждается «стоит»: дробилку остановили, лопасть замерла перед зоной
+    """«Закончились» быстрее, чем подтверждается «стоит»: мельницу остановили, лопасть замерла перед зоной
     (желоб выглядит пустым) — тревоги нет, потому что кадры с неподвижным приводом не в счёт."""
     a = make_drive_analyzer(tmp_path, stopped_after_s=20, running_after_s=5)
     a._settings.empty_after_s = 10
-    b = SeedsAnalyzer(a._settings, "Дробилка", tmp_path)
+    b = SeedsAnalyzer(a._settings, "Мельница", tmp_path)
     run_drive(b, 0, 15, 0.95, True)
     assert [e.level for e in run_drive(b, 15, 60, 0.0, False)] == ["stopped"]
     # а в работе пустой желоб — тревога через те же 10 с
@@ -397,7 +397,7 @@ def test_people_detector_runs_only_when_a_frame_could_change_something(tmp_path)
 
 
 def test_people_detector_rests_while_crusher_is_stopped(tmp_path):
-    """Дробилка стоит с пустым желобом (простой, обед) — детектор не работает: эти кадры в решение не идут."""
+    """Мельница стоит с пустым желобом (простой, обед) — детектор не работает: эти кадры в решение не идут."""
     people = CountingPeople()
     a = make_drive_analyzer(tmp_path, stopped_after_s=10)
     a._detector = people
@@ -418,14 +418,14 @@ RIGHT_WALL = [(0.71, 0.62), (0.74, 0.62), (0.74, 0.90), (0.71, 0.90)]
 
 
 def make_one_class(tmp_path: Path, guards: bool) -> SeedsAnalyzer:
-    """Как на дробилках сейчас: эталоны только «есть семена», эталона «пусто» нет."""
+    """Как на мельницах сейчас: эталоны только «есть семена», эталона «пусто» нет."""
     (tmp_path / "s").mkdir(exist_ok=True)
     cv2.imwrite(str(tmp_path / "s/full.jpg"), scene(0.95), [cv2.IMWRITE_JPEG_QUALITY, 95])
     zone = SeedZone(id="b", name="Желоб", kind="empty", points=BOTTOM,
                     guards=[LEFT_WALL, RIGHT_WALL] if guards else [])
     settings = SeedsConfig(zones=[zone], samples=[SeedSample(id="1", image="s/full.jpg", ts=0, labels={"b": "full"})],
                            ignore_people=False)
-    return SeedsAnalyzer(settings, "Дробилка", tmp_path)
+    return SeedsAnalyzer(settings, "Мельница", tmp_path)
 
 
 def with_arm(image: np.ndarray) -> np.ndarray:
@@ -487,7 +487,7 @@ def test_builtin_walls_do_not_overlap_seed_zones():
 
 def restarted(tmp_path: Path, old: SeedsAnalyzer, gap_s: float) -> SeedsAnalyzer:
     """Новый анализатор (сервер обновили), продолжает с состояния старого через gap_s секунд."""
-    new = SeedsAnalyzer(old._settings, "Дробилка", tmp_path)
+    new = SeedsAnalyzer(old._settings, "Мельница", tmp_path)
     snapshot = old.snapshot()
     assert snapshot is not None and json.loads(json.dumps(snapshot)) == snapshot  # переживает запись в файл
     new.restore(snapshot, snapshot["ts"] + gap_s)

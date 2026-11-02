@@ -1,5 +1,5 @@
 /**
- * Виджет для iPhone и iPad (приложение Scriptable): состояние дробилок, кадры камер и итоги дня.
+ * Виджет для iPhone и iPad (приложение Scriptable): состояние мельниц, кадры камер и итоги дня.
  * Ключ — только чтение /api/widget, отзывается в «Мой аккаунт». Размеры: малый, средний, большой,
  * очень большой (iPad), на экран блокировки — круглый, прямоугольный и строкой.
  *
@@ -9,7 +9,7 @@
  * В скрипте нет обратных кавычек и «${»: он сам лежит внутри шаблонной строки.
  */
 export function scriptableWidget(server: string, token: string): string {
-  return `// track-seeds — дробилки на экране iPhone и iPad (Scriptable)
+  return `// track-seeds — мельницы на экране iPhone и iPad (Scriptable)
 // Ключ только для чтения состояния; отозвать — на сайте: «Мой аккаунт» → «Виджет».
 const SERVER = ${JSON.stringify(server)};
 const TOKEN = ${JSON.stringify(token)};
@@ -29,7 +29,7 @@ const C = {
   blue: dyn("#007AFF", "#0A84FF"),
   gray: dyn("#8E8E93", "#8E8E93"),
 };
-// Состояние дробилки → цвет и значок (SF Symbols)
+// Состояние мельницы → цвет и значок (SF Symbols)
 const STATES = {
   running: { color: C.green, symbol: "gearshape.2.fill" },
   idle: { color: C.orange, symbol: "exclamationmark.triangle.fill" },
@@ -81,7 +81,7 @@ function plural(n, one, few, many) {
   const d = n % 10, h = n % 100;
   return n + " " + (d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many);
 }
-const shortName = (c) => c.name.replace("Дробилка ", "Д");
+const shortName = (c) => c.name.replace("Мельница ", "М");
 
 function request(path) {
   const req = new Request(SERVER + path);
@@ -186,7 +186,7 @@ function header(w, now, compact) {
   head.centerAlignContent();
   symbol(head, "gearshape.2.fill", compact ? 11 : 12, C.secondary);
   head.addSpacer(4);
-  text(head, "ДРОБИЛКИ", rounded(compact ? 11 : 12, "semibold"), C.secondary);
+  text(head, "МЕЛЬНИЦЫ", rounded(compact ? 11 : 12, "semibold"), C.secondary);
   head.addSpacer();
   const clock = new DateFormatter();
   clock.dateFormat = "HH:mm";
@@ -231,7 +231,7 @@ function errorWidget(w, message) {
   head.centerAlignContent();
   symbol(head, "wifi.exclamationmark", 16, C.orange);
   head.addSpacer(6);
-  text(head, "Дробилки", rounded(15, "semibold"));
+  text(head, "Мельницы", rounded(15, "semibold"));
   w.addSpacer(6);
   text(w, "Нет связи с сервером", rounded(13, "medium"), C.secondary, 2);
   text(w, message, Font.systemFont(11), C.secondary, 3);
@@ -249,7 +249,7 @@ async function build() {
   try {
     data = await load();
   } catch (e) {
-    if (lock) text(w, "Дробилки: нет связи", Font.systemFont(12));
+    if (lock) text(w, "Мельницы: нет связи", Font.systemFont(12));
     else errorWidget(w, e.message);
     return w;
   }
@@ -351,7 +351,7 @@ async function build() {
   const shown = crushers.slice(0, 2);
   const tileW = (inner - gap * (shown.length - 1)) / shown.length;
   // Высота кадров — всё, что остаётся после шапки (16 + 10) и итогов дня: iPad — полоса и подпись под кадром
-  // и две строки (10 + 8 + 5 + 16 + 3 + 15), iPhone — «СЕГОДНЯ» (14 + 15) и по строке на дробилку (8 + 16 + 6 + 8 + 4 + 14).
+  // и две строки (10 + 8 + 5 + 16 + 3 + 15), iPhone — «СЕГОДНЯ» (14 + 15) и по строке на мельницу (8 + 16 + 6 + 8 + 4 + 14).
   const below = extra ? 10 + 8 + 5 + 16 + 3 + 15 : 29 + shown.length * 56;
   const tileH = Math.floor(Math.min(extra ? tileW * 0.75 : tileW, size.height - pad * 2 - 26 - below));
   const images = await Promise.all(shown.map((c) => photo(c, tileW)));

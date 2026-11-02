@@ -1,4 +1,4 @@
-"""Синтез речи: piper (нейросетевой голос, работает без интернета) или espeak-ng."""
+"""Синтез речи без интернета: Vosk (естественный голос с верными ударениями), piper или espeak-ng."""
 
 import hashlib
 import io
@@ -14,18 +14,24 @@ from pathlib import Path
 import numpy as np
 
 from ..config import VoiceConfig
-from .audio import read_wav
+from . import vosk
+from .audio import read_wav, wav_bytes
 
 log = logging.getLogger(__name__)
 
-# Русские голоса piper (MIT, https://github.com/rhasspy/piper); ~60 МБ каждый
-VOICES = {
-    "ru_RU-irina-medium": "Ирина (женский)",
-    "ru_RU-dmitri-medium": "Дмитрий (мужской)",
-    "ru_RU-denis-medium": "Денис (мужской)",
-    "ru_RU-ruslan-medium": "Руслан (мужской)",
+# Голос → название. Vosk — одна модель на все пять голосов (~450 МБ на диске); piper (MIT,
+# https://github.com/rhasspy/piper) — по ~60 МБ, ударения от espeak-ng, часто неверные («семЕна»).
+VOICES = {name: f"{title} (Vosk)" for name, (_, title) in vosk.VOICES.items()} | {
+    "ru_RU-irina-medium": "Ирина (piper, женский)",
+    "ru_RU-dmitri-medium": "Дмитрий (piper, мужской)",
+    "ru_RU-denis-medium": "Денис (piper, мужской)",
+    "ru_RU-ruslan-medium": "Руслан (piper, мужской)",
 }
 _VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang}/{code}/{name}/{quality}/{voice}{ext}"
+
+
+def vosk_installed() -> bool:
+    return vosk.installed()
 
 
 def piper_installed() -> bool:
@@ -47,8 +53,10 @@ def voices_dir(models_dir: Path) -> Path:
 
 
 def download_voice(voice: str, models_dir: Path) -> Path:
-    """Скачивает голос piper (если его ещё нет) в voices_dir()."""
+    """Скачивает голос (если его ещё нет) в voices_dir()."""
     folder = voices_dir(models_dir)
+    if voice in vosk.VOICES:
+        return vosk.download(folder)
     model = folder / f"{voice}.onnx"
     if model.is_file() and model.with_suffix(".onnx.json").is_file():
         return model
@@ -66,8 +74,10 @@ def download_voice(voice: str, models_dir: Path) -> Path:
     return model
 
 
-# Загруженные голоса piper — общие для всех экземпляров Synthesizer: смена настроек не грузит голос заново
+# Загруженные голоса — общие для всех экземпляров Synthesizer: смена настроек не грузит голос заново
 _PIPER_VOICES: dict[Path, object] = {}
+_VOSK_VOICES: dict[Path, vosk.VoskVoice] = {}
+_VOSK_LOCK = threading.Lock()  # скачивание модели Vosk
 _PIPER_LOCK = threading.Lock()  # и загрузка/скачивание, и синтез (espeak внутри piper не потокобезопасен)
 
 
@@ -75,7 +85,7 @@ class Synthesizer:
     """Текст → звук. Готовые фразы кешируются на диске: тревога звучит без задержки на синтез.
 
     state — для веб-интерфейса: idle (ещё не загружался), loading (скачивается/загружается
-    голос), ready, error (piper не загрузился — error; при engine=auto говорит espeak-ng).
+    голос), ready, error (голос не загрузился — error; при engine=auto говорит espeak-ng).
     """
 
     def __init__(self, config: VoiceConfig, models_dir: Path, cache_dir: Path) -> None:
@@ -83,27 +93,30 @@ class Synthesizer:
         self._models_dir = models_dir
         self._cache_dir = cache_dir
         self.engine = self._pick_engine()
-        self.state = "idle" if self.engine == "piper" else "ready"
+        self.state = "ready" if self.engine == "espeak" else "idle"
         self.error: str | None = None
 
     @property
     def voice(self) -> str:
-        return self._config.voice if self.engine == "piper" else "espeak-ng"
+        return "espeak-ng" if self.engine == "espeak" else self._config.voice
 
     def _pick_engine(self) -> str:
-        match self._config.engine:
-            case "piper" | "espeak" as engine:
-                return engine
-        if piper_installed():
-            return "piper"
+        """Движок — по выбранному голосу; нет нужного пакета — espeak-ng."""
+        if self._config.engine != "espeak":
+            if self._config.voice in vosk.VOICES and vosk_installed():
+                return "vosk"
+            if self._config.voice not in vosk.VOICES and piper_installed():
+                return "piper"
         if espeak_installed():
             return "espeak"
-        raise RuntimeError("Нет синтеза речи: установите piper-tts (pip) или espeak-ng")
+        raise RuntimeError("Нет синтеза речи: установите vosk-tts или piper-tts (pip) либо espeak-ng")
 
     def prepare(self) -> None:
-        """Скачать и загрузить голос заранее (первый раз — ~60 МБ), чтобы тревога не ждала."""
+        """Скачать голос заранее (первый раз — до ~930 МБ), чтобы тревога не ждала."""
         if self.engine == "piper":
             self._run_piper(lambda voice: None)
+        elif self.engine == "vosk":
+            self._run_vosk(lambda voice: None)
 
     def synthesize(self, text: str) -> tuple[np.ndarray, int]:
         text = " ".join(text.split())
@@ -114,6 +127,8 @@ class Synthesizer:
             return read_wav(path.read_bytes())
         if self.engine == "espeak":
             data = self._espeak_wav(text)
+        elif self.engine == "vosk":
+            data = self._run_vosk(lambda voice: self._vosk_wav(voice, text))
         else:
             data = self._run_piper(lambda voice: self._piper_wav(voice, text))
         path = self._cache_path(text)  # движок мог смениться на запасной
@@ -126,6 +141,38 @@ class Synthesizer:
     def _cache_path(self, text: str) -> Path:
         key = hashlib.sha1(f"{self.engine}|{self.voice}|{self._config.speed}|{text}".encode()).hexdigest()
         return self._cache_dir / f"{key}.wav"
+
+    def _run_vosk(self, action):
+        """Скачать модель Vosk (если ещё нет) и выполнить action(voice); при ошибке — espeak-ng."""
+        try:
+            with _VOSK_LOCK:
+                folder = voices_dir(self._models_dir)
+                if not vosk.downloaded(folder):
+                    self.state = "loading"
+                root = vosk.download(folder)
+                voice = _VOSK_VOICES.setdefault(root, vosk.VoskVoice(root))
+            result = action(voice)
+            self.state, self.error = "ready", None
+            return result
+        except ValueError:
+            raise
+        except Exception as e:
+            return self._fallback(e, action)
+
+    def _vosk_wav(self, voice: vosk.VoskVoice | None, text: str) -> bytes:
+        if voice is None:  # запасной путь после ошибки
+            return self._espeak_wav(text)
+        samples, rate = voice.synthesize(text, vosk.VOICES[self._config.voice][0], self._config.speed)
+        return wav_bytes(samples, rate)
+
+    def _fallback(self, error: Exception, action):
+        self.state, self.error = "error", f"{type(error).__name__}: {error}"
+        # голос не скачался / не загрузился: лучше роботизированный голос, чем молчание
+        if self._config.engine != "auto" or not espeak_installed():
+            raise error
+        log.warning("Голос %s недоступен (%s) — говорю через espeak-ng", self._config.voice, error)
+        self.engine = "espeak"
+        return action(None)
 
     def _run_piper(self, action):
         """Загрузить голос piper (если ещё нет) и выполнить action(voice); при ошибке в режиме auto — espeak-ng."""
@@ -142,13 +189,7 @@ class Synthesizer:
                 self.state, self.error = "ready", None
                 return action(voice)
         except Exception as e:
-            self.state, self.error = "error", f"{type(e).__name__}: {e}"
-            # голос не скачался / не загрузился: лучше роботизированный голос, чем молчание
-            if self._config.engine != "auto" or not espeak_installed():
-                raise
-            log.warning("Голос piper %s недоступен (%s) — говорю через espeak-ng", self._config.voice, e)
-            self.engine = "espeak"
-            return action(None)
+            return self._fallback(e, action)
 
     def _piper_wav(self, voice, text: str) -> bytes:
         from piper import SynthesisConfig
