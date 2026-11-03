@@ -108,6 +108,20 @@ def test_novelty_flags_frame_unlike_any_sample():
     assert model.score(features(other)).novelty > 1
 
 
+def test_one_close_sample_pair_does_not_make_ordinary_frames_novel():
+    # эталон «пусто» с остатком семян почти совпадает с эталоном «есть» при низкой насыпи:
+    # разделение классов — сотые, а обычные кадры полного желоба отличаются друг от друга сильнее
+    model = ZoneModel([features(scene(0.9)), features(scene(0.22))], [features(scene(0.0)), features(scene(0.21))])
+    assert model.separation < 0.05
+    for light in (0.6, 0.8, 1.0, 1.3):
+        for seed in range(4):
+            score = model.score(features(scene(0.9, light, seed=seed)))
+            assert score.value > 0.5
+            assert score.novelty < 1
+    other = np.random.default_rng(0).integers(0, 255, (H, W, 3), dtype=np.uint8)
+    assert model.score(features(other)).novelty > 1
+
+
 def test_one_class_model_only_full_samples():
     model = ZoneModel([features(scene(0.9, seed=1)), features(scene(0.9, seed=2))], [])
     assert model.one_class
