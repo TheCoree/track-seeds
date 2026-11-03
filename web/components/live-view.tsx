@@ -7,6 +7,8 @@ const CRLF2 = [13, 10, 13, 10];
 const STALL_MS = 8000;
 // Поток открылся, а кадра за столько нет — значит, прокси по дороге копит бесконечный ответ (облако роутера,
 // хостинг): дальше — кадры по одному (live.jpg), каждый ответ конечный и проходит через любой прокси.
+// То же, если поток оборвался, не дав ни кадра: Safari (на iPhone — любой браузер) отменяет fetch ответа
+// multipart/x-mixed-replace сразу после заголовков — для него это поток только для <img>.
 const FIRST_FRAME_MS = 5000;
 let streamBuffered = false; // уже выяснили на этой странице — сразу по кадру, без 5 с ожидания
 
@@ -202,6 +204,7 @@ export function useMjpeg(url: string | null, canvas: RefObject<HTMLCanvasElement
         /* обрыв или зависание — переподключаемся */
       }
       clearTimeout(firstFrame);
+      if (!gotFrame && !stopped) streamBuffered = true; // поток не дал ни кадра (Safari, прокси) — дальше по кадру
       if (streamBuffered && !stopped) return pollFrames();
       if (!stopped) {
         setState("connecting");
