@@ -14,7 +14,10 @@ _MIN_SEPARATION = 0.02
 # «Непохоже на эталоны» меряется относительно разделения «есть»/«пусто», но не больше этого
 # расстояния: если классы очень разные, шум или чужая текстура иначе сойдут за «ближе к семенам».
 # На фото семян и металла: свой класс при том же свете — до 0.15 (p99), при сильной смене света — до 0.32.
-_NOVELTY_SCALE_MAX = 0.35
+# И не меньше _NOVELTY_SCALE_MIN: разделение — минимум по всем парам «есть»×«пусто», и одна близкая пара
+# (эталон «пусто» с остатком семян, «есть» с лопастью в зоне) сжимает его до сотых. Обычные кадры
+# работающей мельницы отличаются друг от друга на 0.01–0.09 — и каждый второй стал бы «непохож на эталоны».
+_NOVELTY_SCALE_MIN, _NOVELTY_SCALE_MAX = 0.15, 0.35
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +25,7 @@ class Score:
     value: float  # 0..1: 1 — похоже на «семена есть», 0 — на «пусто»
     d_full: float | None  # расстояние до ближайшего эталона «есть семена»
     d_empty: float | None  # … «пусто»
-    novelty: float | None  # во сколько раз кадр дальше от эталонов, чем «есть» и «пусто» друг от друга (≤0.35)
+    novelty: float | None  # во сколько раз кадр дальше от эталонов, чем «есть» и «пусто» друг от друга (0.15–0.35)
 
 
 def confidence(score: float, threshold: float = 0.5) -> float:
@@ -68,6 +71,13 @@ class ZoneModel:
         self.radius = _radius(self.full or self.empty) * tolerance
 
     @property
+    def novelty_scale(self) -> float | None:
+        """Расстояние, принятое за «далеко от эталонов» (novelty = 1)."""
+        if self.separation is None:
+            return None
+        return min(max(self.separation, _NOVELTY_SCALE_MIN), _NOVELTY_SCALE_MAX)
+
+    @property
     def ready(self) -> bool:
         return bool(self.full or self.empty)
 
@@ -80,7 +90,7 @@ class ZoneModel:
         if d_full is not None and d_empty is not None:
             assert self.separation is not None
             value = d_empty / (d_full + d_empty) if d_full + d_empty > 0 else 0.5
-            return Score(value, d_full, d_empty, min(d_full, d_empty) / min(self.separation, _NOVELTY_SCALE_MAX))
+            return Score(value, d_full, d_empty, min(d_full, d_empty) / self.novelty_scale)
         if d_full is not None:
             # только «есть семена»: всё, что непохоже, считается пустым
             return Score(self.radius / (self.radius + d_full), d_full, None, None)
