@@ -32,9 +32,9 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install .
 
-# Голос и модель детектора людей — в образе: сервер работает без интернета. Голос — тот, что выбран
-# в «Уведомления и голос» (config/settings.json); другой — docker compose build --build-arg VOICE=…
-# Все голоса vosk-* — одна модель (~450 МБ после сжатия BERT); ru_RU-* — голоса piper (~60 МБ).
+# Голос и модель детектора людей — в образе: сервер работает без интернета. В образе — все голоса vosk-*
+# (одна модель, ~450 МБ после сжатия BERT); голос piper (ru_RU-*, ~60 МБ), выбранный в «Уведомления и голос»,
+# сервер докачивает сам в том data/ (VOICES_DOWNLOAD_DIR ниже) — папка образа только для чтения.
 # Детектор людей — чтобы рука рабочего в желобе не считалась пустым желобом.
 # Голос — вне томов, чтобы обновлялся вместе с образом.
 ARG DETECTOR_MODEL=yolox_tiny
@@ -47,8 +47,10 @@ RUN track-seeds --env-file /dev/null download-model ${DETECTOR_MODEL} --voice ${
 COPY --from=web /web/out /app/web
 
 USER app
+# VOICES_DOWNLOAD_DIR — после download-model: при сборке голос кладётся в образ, а не в том
 ENV CONFIG_DIR=/app/config \
     DATA_DIR=/app/data \
+    VOICES_DOWNLOAD_DIR=/app/data/voices \
     WEB_STATIC_DIR=/app/web
 EXPOSE 8080
 HEALTHCHECK --interval=60s --timeout=5s --start-period=60s \

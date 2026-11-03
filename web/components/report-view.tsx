@@ -201,14 +201,24 @@ export function CrusherReportCard({ report, crusher, table }: { report: Report; 
   );
 }
 
-/** Простои за день по обеим мельницам — по времени. */
-export function StopsCard({ report }: { report: Report }) {
-  const rows = report.crushers.flatMap((c) => (c.stop_list ?? []).map(([s, e]) => ({ name: c.name, s, e }))).sort((a, b) => a.s - b.s);
+/** Простои за день — отдельный блок на каждую мельницу. */
+export function StopsCards({ report }: { report: Report }) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      {report.crushers.map((c) => (
+        <StopsCard key={c.id} report={report} crusher={c} />
+      ))}
+    </div>
+  );
+}
+
+function StopsCard({ report, crusher }: { report: Report; crusher: CrusherReport }) {
+  const rows = crusher.stop_list ?? [];
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Простои</CardTitle>
-        <CardDescription>Мельница стояла дольше минуты</CardDescription>
+        <CardTitle>Простои · {crusher.name}</CardTitle>
+        <CardDescription>Стояла дольше минуты</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -217,19 +227,17 @@ export function StopsCard({ report }: { report: Report }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Мельница</TableHead>
                 <TableHead>Когда</TableHead>
                 <TableHead className="text-right">Сколько</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => (
-                <TableRow key={`${r.name}-${r.s}`}>
-                  <TableCell>{r.name}</TableCell>
+              {rows.map(([s, e]) => (
+                <TableRow key={s}>
                   <TableCell className="tabular-nums">
-                    {hhmm(r.s)}–{report.now - r.e < 30 ? "сейчас" : hhmm(r.e)}
+                    {hhmm(s)}–{report.now - e < 30 ? "сейчас" : hhmm(e)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{hoursMinutes(r.e - r.s)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{hoursMinutes(e - s)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -266,13 +274,17 @@ function DayTimeline({ report, crusher }: { report: Report; crusher: CrusherRepo
   return (
     <div className="flex flex-col gap-1">
       <div className="relative h-10 touch-none select-none rounded-md border border-dashed border-muted-foreground/30 bg-muted/40" onPointerMove={onMove} onPointerLeave={() => setHover(null)} role="img" aria-label={`Лента работы за сутки: ${crusher.name}`}>
-        {segments.map(([state, s, e], i) => (
-          <div
-            key={i}
-            className="absolute inset-y-0 border-x border-card first:rounded-l-md last:rounded-r-md"
-            style={{ left: `${pct(s)}%`, width: `${Math.max(pct(e) - pct(s), 0.15)}%`, background: STATES.find((x) => x.key === SHOWN[state])?.color }}
-          />
-        ))}
+        {segments.map(([state, s, e], i) => {
+          const width = pct(e) - pct(s);
+          // короткий отрезок (минуты «нет связи») — без рамок по краям и не уже 3 px, иначе его не видно
+          return (
+            <div
+              key={i}
+              className={cn("absolute inset-y-0 first:rounded-l-md last:rounded-r-md", width >= 1 && "border-x border-card")}
+              style={{ left: `${pct(s)}%`, width: `max(${width}%, 3px)`, background: STATES.find((x) => x.key === SHOWN[state])?.color }}
+            />
+          );
+        })}
         {nowPct !== null && <div className="absolute inset-y-[-4px] w-0.5 rounded bg-foreground" style={{ left: `${nowPct}%` }} title="сейчас" />}
         {hover && (
           <div className="pointer-events-none absolute -top-2 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs shadow-md" style={{ left: `${hover.x}%` }}>
