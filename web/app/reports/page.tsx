@@ -3,7 +3,7 @@
 import { BarChart3, ChevronLeft, ChevronRight, Download, Table2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { CrusherReportCard, reportCsv, StopsCard, SummaryTiles, Utilization } from "@/components/report-view";
+import { CrusherReportCard, reportCsv, StopsCards, SummaryTiles, Utilization } from "@/components/report-view";
 import { Segmented, type SegmentOption } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -109,7 +109,7 @@ function Reports() {
               <CrusherReportCard key={c.id} report={report} crusher={c} table={table} />
             ))}
           </div>
-          {report.period === "day" && <StopsCard report={report} />}
+          {report.period === "day" && <StopsCards report={report} />}
         </>
       )}
       <p className="text-xs text-muted-foreground">«Работала» — привод крутился, включая время без зерна. Время — по часам сервера.</p>

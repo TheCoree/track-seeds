@@ -403,6 +403,33 @@ def test_vosk_download_checks_hashes_and_compresses_bert(tmp_path, monkeypatch, 
     assert download_voice("vosk-male-1", tmp_path / "models") == root
 
 
+def test_voice_missing_from_image_downloads_into_data(tmp_path, monkeypatch, model_server):
+    """Docker: папка голосов из образа только для чтения — голос, выбранный на сервере, докачивается в data/."""
+    import os
+
+    from track_seeds.voice import download_voice, vosk
+    from track_seeds.voice.tts import voices_dir
+
+    image, data = tmp_path / "image-voices", tmp_path / "data" / "voices"
+    (image / vosk.MODEL).mkdir(parents=True)
+    for name in ("config.json", "bert/vocab.txt", "dictionary", "model.onnx", "bert/model.int8.onnx"):
+        (image / vosk.MODEL / name).parent.mkdir(parents=True, exist_ok=True)
+        (image / vosk.MODEL / name).write_bytes(b"x")
+    os.chmod(image, 0o555)  # как в образе: писать нельзя
+    monkeypatch.setenv("VOICES_DIR", str(image))
+    monkeypatch.setenv("VOICES_DOWNLOAD_DIR", str(data))
+    model_server.update({"ru_RU-denis-medium.onnx": b"onnx", "ru_RU-denis-medium.onnx.json": b"{}"})
+    monkeypatch.setattr("track_seeds.voice.tts._VOICE_URL", model_server["_url"].decode().replace("{}", "{voice}{ext}"))
+    try:
+        assert voices_dir(tmp_path, "vosk-female-1") == image  # vosk вшит в образ — не качается заново
+        assert download_voice("vosk-male-1", tmp_path) == image / vosk.MODEL
+        assert download_voice("ru_RU-denis-medium", tmp_path) == data / "ru_RU-denis-medium.onnx"
+        assert (data / "ru_RU-denis-medium.onnx").read_bytes() == b"onnx"
+        assert voices_dir(tmp_path, "ru_RU-denis-medium") == data
+    finally:
+        os.chmod(image, 0o755)
+
+
 def test_vosk_speaks_and_unloads_when_idle(monkeypatch):
     """С настоящей моделью — если она скачана (models/voices); в CI без неё пропускается."""
     from pathlib import Path

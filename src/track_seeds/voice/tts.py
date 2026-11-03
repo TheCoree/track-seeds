@@ -46,19 +46,32 @@ def espeak_installed() -> bool:
     return shutil.which("espeak-ng") is not None
 
 
-def voices_dir(models_dir: Path) -> Path:
-    """VOICES_DIR или models_dir/voices. В Docker голоса лежат вне тома с моделями: в уже
-    существующий том Docker не докладывает новые файлы из образа."""
-    return Path(os.environ["VOICES_DIR"]) if os.environ.get("VOICES_DIR") else models_dir / "voices"
+def voices_dir(models_dir: Path, voice: str | None = None) -> Path:
+    """Папка голоса: VOICES_DIR или models_dir/voices. В Docker голоса лежат вне тома с моделями: в уже
+    существующий том Docker не докладывает новые файлы из образа.
+
+    VOICES_DOWNLOAD_DIR — куда докачивать голос, которого там нет: в Docker папка из образа только для
+    чтения, а голос, выбранный уже на сервере, скачивается в том data/ и переживает пересборку образа."""
+    folder = Path(os.environ["VOICES_DIR"]) if os.environ.get("VOICES_DIR") else models_dir / "voices"
+    extra = os.environ.get("VOICES_DOWNLOAD_DIR")
+    if extra and voice is not None and not _has_voice(folder, voice):
+        return Path(extra)
+    return folder
+
+
+def _has_voice(folder: Path, voice: str) -> bool:
+    if voice in vosk.VOICES:
+        return vosk.downloaded(folder)
+    return (folder / f"{voice}.onnx").is_file() and (folder / f"{voice}.onnx.json").is_file()
 
 
 def download_voice(voice: str, models_dir: Path) -> Path:
     """Скачивает голос (если его ещё нет) в voices_dir()."""
-    folder = voices_dir(models_dir)
+    folder = voices_dir(models_dir, voice)
     if voice in vosk.VOICES:
         return vosk.download(folder)
     model = folder / f"{voice}.onnx"
-    if model.is_file() and model.with_suffix(".onnx.json").is_file():
+    if _has_voice(folder, voice):
         return model
     code, name, quality = voice.split("-")
     folder.mkdir(parents=True, exist_ok=True)
@@ -146,7 +159,7 @@ class Synthesizer:
         """Скачать модель Vosk (если ещё нет) и выполнить action(voice); при ошибке — espeak-ng."""
         try:
             with _VOSK_LOCK:
-                folder = voices_dir(self._models_dir)
+                folder = voices_dir(self._models_dir, self._config.voice)
                 if not vosk.downloaded(folder):
                     self.state = "loading"
                 root = vosk.download(folder)
@@ -180,7 +193,7 @@ class Synthesizer:
             from piper import PiperVoice
 
             with _PIPER_LOCK:
-                path = voices_dir(self._models_dir) / f"{self._config.voice}.onnx"
+                path = voices_dir(self._models_dir, self._config.voice) / f"{self._config.voice}.onnx"
                 voice = _PIPER_VOICES.get(path)
                 if voice is None:
                     self.state = "loading"
