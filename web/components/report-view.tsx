@@ -103,9 +103,10 @@ function Tile({ label, value, note, color, spark }: { label: string; value: stri
   );
 }
 
-/** Сводка по обеим мельницам. */
-export function SummaryTiles({ report }: { report: Report }) {
-  const cs = report.crushers;
+/** Сводка: по обеим мельницам или (crusher) по одной — те же четыре плитки. */
+export function SummaryTiles({ report, crusher }: { report: Report; crusher?: CrusherReport }) {
+  const cs = crusher ? [crusher] : report.crushers;
+  const one = crusher !== undefined;
   const buckets = report.edges.slice(0, -1).map((_, i) => i);
   const work = sum(cs, (t) => t.running + t.idle);
   const stopped = sum(cs, (t) => t.stopped);
@@ -114,23 +115,30 @@ export function SummaryTiles({ report }: { report: Report }) {
   const stops = cs.reduce((a, c) => a + c.stops, 0);
   const runouts = cs.reduce((a, c) => a + c.runouts, 0);
   const each = (f: (c: CrusherReport) => string) => cs.map((c) => `${c.name.replace("Мельница ", "М")}: ${f(c)}`).join(" · ");
+  const stopsNote = !one
+    ? each((c) => String(c.stops))
+    : crusher.longest_stop >= 60
+      ? `дольше всего ${hoursMinutes(crusher.longest_stop)}`
+      : stops
+        ? "все короче минуты"
+        : "не останавливалась";
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Tile
-        label="Работали"
+        label={one ? "Работала" : "Работали"}
         color="var(--state-running)"
         value={total(work)}
         note={observed ? `${Math.round((work / observed) * 100)} % времени наблюдения` : "нет данных"}
         spark={<Spark report={report} values={buckets.map((i) => sum(cs, (t) => t.running + t.idle, i))} color="var(--state-running)" />}
       />
       <Tile
-        label="Стояли"
+        label={one ? "Стояла" : "Стояли"}
         color="var(--state-stopped)"
         value={total(stopped)}
         note={observed ? `${Math.round((stopped / observed) * 100)} % времени` : "нет данных"}
         spark={<Spark report={report} values={buckets.map((i) => sum(cs, (t) => t.stopped, i))} color="var(--state-stopped)" />}
       />
-      <Tile label="Остановок" value={String(stops)} note={each((c) => String(c.stops))} />
+      <Tile label="Остановок" value={String(stops)} note={stopsNote} />
       <Tile
         label="Без зерна"
         color="var(--state-idle)"
@@ -138,6 +146,20 @@ export function SummaryTiles({ report }: { report: Report }) {
         note={runouts ? `${runouts} ${plural(runouts, "раз", "раза", "раз")} закончилось зерно` : "зерно не заканчивалось"}
         spark={<Spark report={report} values={buckets.map((i) => sum(cs, (t) => t.idle, i))} color="var(--state-idle)" />}
       />
+    </div>
+  );
+}
+
+/** Та же сводка — отдельно по каждой мельнице. */
+export function CrusherTiles({ report }: { report: Report }) {
+  return (
+    <div className="flex flex-col gap-6">
+      {report.crushers.map((c) => (
+        <section key={c.id} className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">{c.name}</h2>
+          <SummaryTiles report={report} crusher={c} />
+        </section>
+      ))}
     </div>
   );
 }
@@ -196,53 +218,6 @@ export function CrusherReportCard({ report, crusher, table }: { report: Report; 
       <CardContent className="flex flex-col gap-3">
         {table ? <BucketTable report={report} crusher={crusher} /> : report.period === "day" ? <DayTimeline report={report} crusher={crusher} /> : <DaysChart report={report} crusher={crusher} />}
         <div className="text-xs text-muted-foreground">{details.length ? details.join(" · ") : "За этот период не работала"}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Простои за день — отдельный блок на каждую мельницу. */
-export function StopsCards({ report }: { report: Report }) {
-  return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      {report.crushers.map((c) => (
-        <StopsCard key={c.id} report={report} crusher={c} />
-      ))}
-    </div>
-  );
-}
-
-function StopsCard({ report, crusher }: { report: Report; crusher: CrusherReport }) {
-  const rows = crusher.stop_list ?? [];
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Простои · {crusher.name}</CardTitle>
-        <CardDescription>Стояла дольше минуты</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Простоев не было</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Когда</TableHead>
-                <TableHead className="text-right">Сколько</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map(([s, e]) => (
-                <TableRow key={s}>
-                  <TableCell className="tabular-nums">
-                    {hhmm(s)}–{report.now - e < 30 ? "сейчас" : hhmm(e)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{hoursMinutes(e - s)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
       </CardContent>
     </Card>
   );
